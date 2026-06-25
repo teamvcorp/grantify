@@ -79,10 +79,56 @@ Purpose + 2 grants + 2 KB entries only if the org has no purposes yet. Needs `ts
 - UI: `components/grants/grant-search.tsx` now has a Purpose picker + "Discover with AI" section
   alongside the federal results.
 
-## Status — what's next
+## Purposes CRUD (done)
 
-1. Purposes CRUD UI + DB-backed dashboard aggregates + Grant tracker/workspace.
-2. Remaining AI routes: `/generate-form`, `/match-kb`, `/draft-narrative` (streaming).
+- `lib/schemas.ts` — `PurposeInput` zod schema + `FUNDER_TYPES`, shared by create/update.
+- `GET`/`POST /api/purposes`, `PATCH`/`DELETE /api/purposes/[id]` — all org-scoped. DELETE
+  refuses (409) if grants still link to the purpose (no orphans). Next 16 route params are a
+  Promise — `const { id } = await params`.
+- UI: `components/purposes/purposes-manager.tsx` (list + create/edit Dialog + delete),
+  rendered by the Purposes page. Funder types are toggle buttons (no checkbox component exists).
+
+## Grant tracker + dashboard (done)
+
+- `lib/schemas.ts` — `GrantInput` (create/import) + `GrantPatch` (status/phase/notes) + `GRANT_STATUSES`.
+- `GET`/`POST /api/grants`, `PATCH`/`DELETE /api/grants/[id]` — org-scoped. POST verifies the
+  purpose belongs to the org and dedupes federal imports by `grantsgov_id`. `phase` must be cast
+  to `GrantPhase` (zod gives `number`).
+- Both federal AND AI-discovered results import via the same POST (only `discovered_by` differs).
+- UI: `components/grants/grant-pipeline.tsx` (tracker grouped by status, inline status/phase
+  selects, delete) + refactored `grant-search.tsx` (shared "Import into" purpose selector +
+  per-row Import buttons). Grants page composes both and bumps a `version` to refresh the pipeline.
+- Dashboard (`app/(app)/dashboard/page.tsx`) is now a `force-dynamic` server component computing
+  live aggregates (pipeline value, active count, due-in-30, awarded YTD, upcoming deadlines).
+
+## AI form layer + KB + documents + workspace (done)
+
+- KB CRUD: `GET`/`POST /api/kb`, `PATCH`/`DELETE /api/kb/[id]` (embedding_text kept in sync);
+  UI `components/kb/kb-manager.tsx` → knowledge-base page.
+- AI form layer (all org-scoped, reuse `lib/anthropic` helpers + `lib/forms.ts`):
+  - `POST /api/ai/generate-form` — Claude turns `requirements_raw` into GrantForm fields (zod-validated,
+    `randomUUID` ids), upserts `grant_forms`. Adaptive thinking, JSON via `parseJsonFromText`.
+  - `POST /api/ai/match-kb` — one Claude call maps fields → best KB entry + drafts answers; sets
+    `source:'kb'` + `kb_match_id`, bumps KB `times_used`.
+  - `POST /api/ai/draft-narrative` — STREAMING (ReadableStream of text deltas, `thinking:disabled`),
+    saves `narrative_draft` on completion. Client reads `res.body` reader.
+- `GET`/`PATCH /api/grants/[id]/form` (FormPatch: answers[] + narrative_draft) and `GET /api/grants/[id]`.
+- Grant workspace: `components/grants/grant-workspace.tsx` at `/grants/[id]` (generate/match/draft +
+  editable fields by section + completion % + narrative editor). Pipeline grant names link here.
+- Document vault (Vercel Blob): `GET`/`POST /api/documents` (multipart, org-namespaced blob path,
+  25MB cap) + `DELETE /api/documents/[id]` (del blob then metadata); UI documents-manager.
+- Activity log helper `lib/activity.ts` (logged on form_generated + narrative_drafted).
+
+Lint note: `react-hooks/set-state-in-effect` (React Compiler rule) errors on a synchronous setState
+call from an effect — wrap fetch-on-mount as `useEffect(() => { void (async () => { await load() })() }, [])`.
+
+## Status — what's next (deferred V2)
+
+1. Budget builder (no `budgets` collection yet — would add one + UI).
+2. PDF export of the form/narrative.
+3. Stripe scaffold (plan gates) — env vars already in `.env.example`.
+4. Grant-specific documents (currently all uploads are org-scoped; `OrgDocument.grant_id` supports it).
+5. Activity log UI surface (entries are written; nothing renders them yet).
 3. Knowledge base CRUD + matching, document vault (Vercel Blob), budget, PDF export, activity log.
 4. Stripe scaffold (plan gates) — V2.
 

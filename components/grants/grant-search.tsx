@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Search, Loader2, ExternalLink, Sparkles } from 'lucide-react'
+import { Search, Loader2, ExternalLink, Sparkles, Plus, Check } from 'lucide-react'
 
 interface SearchResult {
   grantsgov_id: string
@@ -52,17 +52,23 @@ function formatAmount(min: number | null, max: number | null): string {
   return 'Amount varies'
 }
 
-export function GrantSearch() {
-  // --- Federal (Grants.gov) search ---
+export function GrantSearch({ onImported }: { onImported?: () => void }) {
+  // Shared: which purpose imports/discovery target.
+  const [purposes, setPurposes] = useState<PurposeOption[] | null>(null)
+  const [purposeId, setPurposeId] = useState('')
+
+  // Per-result import tracking (keys: grantsgov_id for federal, url for AI).
+  const [importingKey, setImportingKey] = useState<string | null>(null)
+  const [importedKeys, setImportedKeys] = useState<Set<string>>(new Set())
+
+  // Federal (Grants.gov) search.
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [hitCount, setHitCount] = useState(0)
 
-  // --- AI (Claude) discovery, tied to a Purpose ---
-  const [purposes, setPurposes] = useState<PurposeOption[] | null>(null)
-  const [purposeId, setPurposeId] = useState('')
+  // AI (Claude) discovery.
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   const [aiResults, setAiResults] = useState<AiResult[] | null>(null)
@@ -73,6 +79,28 @@ export function GrantSearch() {
       .then((d) => setPurposes(d.purposes))
       .catch(() => setPurposes([]))
   }, [])
+
+  async function importGrant(key: string, payload: Record<string, unknown>) {
+    if (!purposeId) return
+    setImportingKey(key)
+    try {
+      const res = await fetch('/api/grants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, purpose_id: purposeId }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || 'Import failed.')
+      }
+      setImportedKeys((s) => new Set(s).add(key))
+      onImported?.()
+    } catch {
+      // Surface inline by leaving the button enabled; keep it lightweight.
+    } finally {
+      setImportingKey(null)
+    }
+  }
 
   async function runSearch(e: React.FormEvent) {
     e.preventDefault()
@@ -117,8 +145,52 @@ export function GrantSearch() {
     }
   }
 
+  const noPurposes = purposes !== null && purposes.length === 0
+
+  function ImportButton({ k, onClick }: { k: string; onClick: () => void }) {
+    const done = importedKeys.has(k)
+    return (
+      <Button
+        variant={done ? 'secondary' : 'outline'}
+        size="sm"
+        disabled={!purposeId || importingKey === k || done}
+        onClick={onClick}
+        title={!purposeId ? 'Select a purpose first' : undefined}
+      >
+        {importingKey === k ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : done ? (
+          <Check className="h-3.5 w-3.5" />
+        ) : (
+          <Plus className="h-3.5 w-3.5" />
+        )}
+        {done ? 'Imported' : 'Import'}
+      </Button>
+    )
+  }
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-8">
+      {/* Shared target purpose for import + AI discovery */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground">Import into:</span>
+        <select
+          value={purposeId}
+          onChange={(e) => setPurposeId(e.target.value)}
+          disabled={!purposes || noPurposes}
+          className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+        >
+          <option value="">
+            {noPurposes ? 'No purposes — create one first' : 'Select a purpose…'}
+          </option>
+          {purposes?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Federal search */}
       <section className="space-y-4">
         <form onSubmit={runSearch} className="flex gap-2">
@@ -129,17 +201,12 @@ export function GrantSearch() {
             className="max-w-xl"
           />
           <Button type="submit" disabled={loading}>
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
             Search
           </Button>
         </form>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
-
         {results && (
           <p className="text-sm text-muted-foreground">
             {hitCount.toLocaleString()} matches on Grants.gov — showing {results.length}.
@@ -150,7 +217,7 @@ export function GrantSearch() {
           {results?.map((r) => (
             <Card key={r.grantsgov_id}>
               <CardContent className="flex items-start justify-between gap-4 py-4">
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <a
                       href={r.url}
@@ -171,6 +238,20 @@ export function GrantSearch() {
                     Closes {formatDate(r.deadline_full)}
                   </p>
                 </div>
+                <ImportButton
+                  k={r.grantsgov_id}
+                  onClick={() =>
+                    importGrant(r.grantsgov_id, {
+                      name: r.name,
+                      funder: r.funder,
+                      funder_type: 'federal',
+                      deadline_full: r.deadline_full,
+                      url: r.url,
+                      grantsgov_id: r.grantsgov_id,
+                      discovered_by: 'ai',
+                    })
+                  }
+                />
               </CardContent>
             </Card>
           ))}
@@ -181,49 +262,22 @@ export function GrantSearch() {
         )}
       </section>
 
-      {/* AI discovery (foundation / state / corporate), tied to a Purpose */}
+      {/* AI discovery */}
       <section className="space-y-4 border-t pt-8">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold tracking-tight">
             <Sparkles className="h-4 w-4" /> AI discovery
           </h2>
           <p className="text-sm text-muted-foreground">
-            Uses Claude with web search to find foundation, state, and corporate grants
-            matching one of your purposes — the funders Grants.gov doesn&apos;t list.
+            Uses Claude with web search to find foundation, state, and corporate grants for the
+            selected purpose — the funders Grants.gov doesn&apos;t list.
           </p>
         </div>
 
-        {purposes && purposes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No purposes yet. Create a purpose first, then discovery can match against it.
-          </p>
-        ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={purposeId}
-              onChange={(e) => setPurposeId(e.target.value)}
-              disabled={!purposes}
-              className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-            >
-              <option value="">
-                {purposes ? 'Select a purpose…' : 'Loading purposes…'}
-              </option>
-              {purposes?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <Button onClick={runDiscovery} disabled={!purposeId || aiLoading}>
-              {aiLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              Discover with AI
-            </Button>
-          </div>
-        )}
+        <Button onClick={runDiscovery} disabled={!purposeId || aiLoading}>
+          {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          Discover with AI
+        </Button>
 
         {aiLoading && (
           <p className="text-sm text-muted-foreground">
@@ -233,31 +287,53 @@ export function GrantSearch() {
         {aiError && <p className="text-sm text-destructive">{aiError}</p>}
 
         <div className="space-y-3">
-          {aiResults?.map((r, i) => (
-            <Card key={`${r.url}-${i}`}>
-              <CardContent className="space-y-1 py-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium hover:underline"
-                  >
-                    {r.name}
-                    <ExternalLink className="ml-1 inline h-3 w-3 align-baseline" />
-                  </a>
-                  <Badge variant="secondary" className="capitalize">
-                    {r.funder_type}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {r.funder} · {formatAmount(r.amount_min, r.amount_max)} · Closes{' '}
-                  {formatDate(r.deadline)}
-                </p>
-                <p className="text-sm">{r.summary}</p>
-              </CardContent>
-            </Card>
-          ))}
+          {aiResults?.map((r, i) => {
+            const key = `${r.url}-${i}`
+            return (
+              <Card key={key}>
+                <CardContent className="flex items-start justify-between gap-4 py-4">
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium hover:underline"
+                      >
+                        {r.name}
+                        <ExternalLink className="ml-1 inline h-3 w-3 align-baseline" />
+                      </a>
+                      <Badge variant="secondary" className="capitalize">
+                        {r.funder_type}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {r.funder} · {formatAmount(r.amount_min, r.amount_max)} · Closes{' '}
+                      {formatDate(r.deadline)}
+                    </p>
+                    <p className="text-sm">{r.summary}</p>
+                  </div>
+                  <ImportButton
+                    k={key}
+                    onClick={() =>
+                      importGrant(key, {
+                        name: r.name,
+                        funder: r.funder,
+                        funder_type: r.funder_type,
+                        amount_min: r.amount_min ?? 0,
+                        amount_max: r.amount_max ?? 0,
+                        deadline_full: r.deadline,
+                        url: r.url,
+                        focus_areas: r.focus_areas,
+                        notes: r.summary,
+                        discovered_by: 'ai',
+                      })
+                    }
+                  />
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
 
         {aiResults && aiResults.length === 0 && (

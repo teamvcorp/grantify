@@ -11,7 +11,6 @@
  * Requires in .env.local: MONGODB_URI, SEED_ORG_NAME, SEED_ADMIN_EMAIL,
  * SEED_ADMIN_PASSWORD. Optional: SEED_ORG_EIN.
  */
-import { ObjectId } from 'mongodb'
 import { z } from 'zod'
 import { getClient, getDb } from '../lib/mongodb'
 import {
