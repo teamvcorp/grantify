@@ -117,7 +117,8 @@ export async function POST(req: Request) {
 
     // 4. Ask Claude, resuming across any server-tool pauses.
     const client = getAnthropic()
-    const tools = [{ ...WEB_SEARCH_TOOL, max_uses: 5 }]
+    // Cap searches to keep total latency under the function limit.
+    const tools = [{ ...WEB_SEARCH_TOOL, max_uses: 3 }]
     const messages: Parameters<typeof client.messages.create>[0]['messages'] = [
       { role: 'user', content: buildPrompt(purpose) },
     ]
@@ -125,7 +126,9 @@ export async function POST(req: Request) {
     let response = await client.messages.create({
       model: GRANT_OS_MODEL,
       max_tokens: 8000,
-      thinking: { type: 'adaptive' },
+      // Thinking is disabled here: on top of web search it pushed the call past
+      // the 60s function limit. Web search alone is what makes discovery useful.
+      thinking: { type: 'disabled' },
       tools,
       messages,
     })
@@ -138,7 +141,9 @@ export async function POST(req: Request) {
       response = await client.messages.create({
         model: GRANT_OS_MODEL,
         max_tokens: 8000,
-        thinking: { type: 'adaptive' },
+        // Thinking is disabled here: on top of web search it pushed the call past
+      // the 60s function limit. Web search alone is what makes discovery useful.
+      thinking: { type: 'disabled' },
         tools,
         messages,
       })
