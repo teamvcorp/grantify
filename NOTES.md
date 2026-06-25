@@ -177,6 +177,10 @@ there's no self-serve invite/reset flow yet.
   `app/sitemap.ts`, `app/manifest.ts`, `app/opengraph-image.tsx` (dynamic `next/og` 1200×630 card).
 - All verified live (robots.txt, sitemap.xml, manifest.webmanifest, opengraph-image → image/png).
 - Landing CTAs use base-ui `<Button render={<Link/>}>` polymorphism.
+- **Parent-org association:** Grantify is a project of **The VA Corp** (www.thevacorp.com). Landing
+  JSON-LD uses `@graph` with an Organization node (`parentOrganization` + `sameAs` → thevacorp.com)
+  + footer "A project of The VA Corp" link. The high-value inbound link FROM thevacorp.com →
+  getgrantify.com must be added on that site (it isn't in this repo).
 
 ## Stripe webhook (report saved)
 

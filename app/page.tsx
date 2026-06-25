@@ -51,16 +51,38 @@ const FEATURES = [
   },
 ]
 
+const PARENT_URL = 'https://www.thevacorp.com'
+
+// Two linked entities: Grantify (the org/app) and its parent, The VA Corp.
+// `parentOrganization` + `sameAs` tell search engines the two are related.
 const jsonLd = {
   '@context': 'https://schema.org',
-  '@type': 'SoftwareApplication',
-  name: 'Grantify',
-  applicationCategory: 'BusinessApplication',
-  operatingSystem: 'Web',
-  url: SITE_URL,
-  description:
-    'AI-assisted grant management for nonprofits: discover, track, and write grants from discovery to submission.',
-  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: 'Grantify',
+      url: SITE_URL,
+      description: 'AI-assisted grant management for nonprofits.',
+      parentOrganization: {
+        '@type': 'Organization',
+        name: 'The VA Corp',
+        url: PARENT_URL,
+      },
+      sameAs: [PARENT_URL],
+    },
+    {
+      '@type': 'SoftwareApplication',
+      name: 'Grantify',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      url: SITE_URL,
+      description:
+        'AI-assisted grant management for nonprofits: discover, track, and write grants from discovery to submission.',
+      publisher: { '@id': `${SITE_URL}/#organization` },
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    },
+  ],
 }
 
 export default function LandingPage() {
@@ -119,8 +141,17 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t px-6 py-8 text-center text-sm text-muted-foreground">
-        © {new Date().getFullYear()} Grantify · AI-assisted grant management for nonprofits
+      <footer className="space-y-1 border-t px-6 py-8 text-center text-sm text-muted-foreground">
+        <p>© {new Date().getFullYear()} Grantify · AI-assisted grant management for nonprofits</p>
+        <p>
+          A project of{' '}
+          <a
+            href="https://www.thevacorp.com"
+            className="font-medium underline-offset-4 hover:underline"
+          >
+            The VA Corp
+          </a>
+        </p>
       </footer>
     </div>
   )
