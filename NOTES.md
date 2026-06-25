@@ -154,11 +154,25 @@ there's no self-serve invite/reset flow yet.
 - **Password reset (admin)**: `MemberPatch` now accepts `password`; `PATCH /api/team/[id]` hashes it;
   Settings has a per-member key icon. (Self-serve email invite/reset still deferred — no email provider.)
 
+## Email (Resend) — done & live
+
+- `lib/email.ts` — lazy/build-safe Resend client, `emailConfigured()` (needs `RESEND_API_KEY` +
+  `RESEND_FROM`), `sendEmail({to,subject,html,replyTo})`. `RESEND_FROM` must be on the
+  Resend-verified domain (**fyht4.com**, e.g. `Grant OS <grants@fyht4.com>`).
+- `lib/grant-render.ts` — `renderGrantHtml(grant, form, budget)` builds the complete-grant HTML
+  (sections + narrative + budget table). Reusable; good base for a future PDF attachment.
+- `POST /api/grants/[id]/email` — emails the complete grant; recipient defaults to the signed-in
+  user, optional `to` override; `replyTo` = sender. "Email grant" button in the workspace.
+- Team add sends a best-effort welcome email (login link only — **never** the password).
+- Verified live: a real send from `grants@fyht4.com` succeeded.
+
 ## Status — what's next (still deferred)
 
-1. Self-serve invite + email-based password reset (needs an email provider — Resend/SES).
+1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email
+   is a login link only).
 2. Atlas Vector Search for KB matching at scale (`embedding_text` reserved).
-3. Real Stripe wiring verification once keys/prices exist (end-to-end checkout + webhook test).
+3. Real Stripe end-to-end verification once keys/prices exist (checkout + webhook).
+4. Optional: PDF attachment on the grant email (needs a PDF lib; HTML body works today).
 3. Knowledge base CRUD + matching, document vault (Vercel Blob), budget, PDF export, activity log.
 4. Stripe scaffold (plan gates) — V2.
 

@@ -5,6 +5,7 @@ import { orgs, users } from '@/lib/collections'
 import { MemberInput } from '@/lib/schemas'
 import { hashPassword } from '@/lib/password'
 import { memberLimit } from '@/lib/plan'
+import { emailConfigured, sendEmail } from '@/lib/email'
 import type { User } from '@/lib/types'
 
 /**
@@ -88,6 +89,22 @@ export async function POST(req: Request) {
       created_at: new Date(),
       last_login: null,
     })
+    // Best-effort welcome email — a login link, never the password (the admin
+    // shares the temp password out of band).
+    if (emailConfigured()) {
+      const origin = new URL(req.url).origin
+      await sendEmail({
+        to: email,
+        subject: 'You’ve been added to Grant OS',
+        html: `<div style="font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111">
+          <p>Hi ${parsed.data.name},</p>
+          <p>An account was created for you on Grant OS. Sign in here:</p>
+          <p><a href="${origin}/login">${origin}/login</a></p>
+          <p>Your administrator will share your temporary password separately. Use the email <strong>${email}</strong> to sign in.</p>
+        </div>`,
+      }).catch(() => {})
+    }
+
     const created = await col.findOne({ _id: res.insertedId })
     return NextResponse.json({ member: toClient(created!) }, { status: 201 })
   } catch (err) {

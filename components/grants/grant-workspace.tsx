@@ -16,6 +16,7 @@ import {
   Loader2,
   ArrowLeft,
   Printer,
+  Mail,
 } from 'lucide-react'
 import { BudgetPanel } from '@/components/grants/budget-panel'
 import { ActivityPanel } from '@/components/grants/activity-panel'
@@ -229,6 +230,24 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     w.print()
   }
 
+  async function emailGrant() {
+    const to = prompt('Email the complete grant to (leave blank to send to yourself):')
+    if (to === null) return // cancelled
+    setError(null)
+    try {
+      const res = await fetch(`/api/grants/${grantId}/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(to.trim() ? { to: to.trim() } : {}),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Email failed.')
+      alert(`Sent to ${data.sent_to}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Email failed.')
+    }
+  }
+
   async function saveNarrative() {
     setSavingNarrative(true)
     try {
@@ -276,6 +295,10 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
         <Button variant="ghost" onClick={exportPdf} disabled={!form}>
           <Printer className="h-4 w-4" />
           Export PDF
+        </Button>
+        <Button variant="ghost" onClick={emailGrant} disabled={!form}>
+          <Mail className="h-4 w-4" />
+          Email grant
         </Button>
       </div>
 
