@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/components/catalyst/badge'
+import { Select } from '@/components/catalyst/select'
 import {
   Dialog,
   DialogContent,
@@ -157,11 +158,11 @@ export function KbManager() {
                 </div>
                 <p className="text-sm text-muted-foreground">{e.answer}</p>
                 <div className="flex flex-wrap items-center gap-1 pt-1">
-                  <Badge variant="secondary" className="capitalize">
+                  <Badge color="emerald" className="capitalize">
                     {e.category}
                   </Badge>
                   {e.tags.map((t) => (
-                    <Badge key={t} variant="outline">
+                    <Badge key={t} color="zinc">
                       {t}
                     </Badge>
                   ))}
@@ -204,18 +205,18 @@ export function KbManager() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="kb-cat">Category</Label>
-                <select
+                <Select
                   id="kb-cat"
                   value={form.category}
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="h-9 w-full rounded-md border bg-transparent px-3 text-sm capitalize focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="capitalize"
                 >
                   {KB_CATEGORIES.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="kb-tags">Tags (comma-separated)</Label>

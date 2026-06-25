@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/components/catalyst/badge'
+import { Select } from '@/components/catalyst/select'
 import { Button } from '@/components/ui/button'
 import { Trash2, ExternalLink } from 'lucide-react'
 import { GRANT_STATUSES } from '@/lib/schemas'
+import { funderColor } from '@/lib/ui'
 
 interface Grant {
   id: string
@@ -132,7 +134,7 @@ export function GrantPipeline({ version }: { version: number }) {
                           <ExternalLink className="h-3 w-3" />
                         </a>
                       )}
-                      <Badge variant="secondary" className="capitalize">
+                      <Badge color={funderColor(g.funder_type)} className="capitalize">
                         {g.funder_type}
                       </Badge>
                     </div>
@@ -143,30 +145,30 @@ export function GrantPipeline({ version }: { version: number }) {
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    <select
+                    <Select
                       value={g.status}
                       onChange={(e) => patch(g.id, { status: e.target.value })}
-                      className="h-7 rounded-md border bg-transparent px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       aria-label="Status"
+                      className="w-36"
                     >
                       {GRANT_STATUSES.map((s) => (
                         <option key={s} value={s}>
                           {STATUS_LABELS[s]}
                         </option>
                       ))}
-                    </select>
-                    <select
+                    </Select>
+                    <Select
                       value={g.phase}
                       onChange={(e) => patch(g.id, { phase: Number(e.target.value) })}
-                      className="h-7 rounded-md border bg-transparent px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       aria-label="Phase"
+                      className="w-28"
                     >
                       {[1, 2, 3, 4, 5, 6].map((p) => (
                         <option key={p} value={p}>
                           Phase {p}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                     <Button variant="ghost" size="icon-sm" onClick={() => remove(g)}>
                       <Trash2 className="h-3.5 w-3.5" />
                       <span className="sr-only">Remove</span>

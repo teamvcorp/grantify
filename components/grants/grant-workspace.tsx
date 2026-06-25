@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/components/catalyst/badge'
+import { Select } from '@/components/catalyst/select'
 import { Progress } from '@/components/ui/progress'
+import { sourceColor } from '@/lib/ui'
 import {
   Sparkles,
   Wand2,
@@ -334,27 +336,21 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
                         {f.required && <span className="text-destructive"> *</span>}
                       </label>
                       {SOURCE_LABEL[f.source] && (
-                        <Badge variant={f.source === 'kb' ? 'secondary' : 'outline'}>
-                          {SOURCE_LABEL[f.source]}
-                        </Badge>
+                        <Badge color={sourceColor(f.source)}>{SOURCE_LABEL[f.source]}</Badge>
                       )}
                     </div>
                     {f.help_text && (
                       <p className="text-xs text-muted-foreground">{f.help_text}</p>
                     )}
                     {f.type === 'select' ? (
-                      <select
-                        value={f.answer}
-                        onChange={(e) => setAnswer(f.id, e.target.value)}
-                        className="h-9 w-full rounded-md border bg-transparent px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
+                      <Select value={f.answer} onChange={(e) => setAnswer(f.id, e.target.value)}>
                         <option value="">Select…</option>
                         {f.options.map((o) => (
                           <option key={o} value={o}>
                             {o}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     ) : f.type === 'file' ? (
                       <p className="text-xs text-muted-foreground">
                         Attach in the Documents vault.

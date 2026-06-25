@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/components/catalyst/badge'
+import { Select } from '@/components/catalyst/select'
 import { Search, Loader2, ExternalLink, Sparkles, Plus, Check } from 'lucide-react'
+import { funderColor } from '@/lib/ui'
 
 interface SearchResult {
   grantsgov_id: string
@@ -174,11 +176,12 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       {/* Shared target purpose for import + AI discovery */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-muted-foreground">Import into:</span>
-        <select
+        <Select
           value={purposeId}
           onChange={(e) => setPurposeId(e.target.value)}
           disabled={!purposes || noPurposes}
-          className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          aria-label="Purpose"
+          className="sm:w-72"
         >
           <option value="">
             {noPurposes ? 'No purposes — create one first' : 'Select a purpose…'}
@@ -188,7 +191,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
               {p.name}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
 
       {/* Federal search */}
@@ -228,8 +231,8 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
                       {r.name}
                       <ExternalLink className="ml-1 inline h-3 w-3 align-baseline" />
                     </a>
-                    <Badge variant="secondary">Federal</Badge>
-                    <Badge variant="outline">{r.status}</Badge>
+                    <Badge color="blue">Federal</Badge>
+                    <Badge color="zinc">{r.status}</Badge>
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {r.funder} · #{r.number}
@@ -303,7 +306,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
                         {r.name}
                         <ExternalLink className="ml-1 inline h-3 w-3 align-baseline" />
                       </a>
-                      <Badge variant="secondary" className="capitalize">
+                      <Badge color={funderColor(r.funder_type)} className="capitalize">
                         {r.funder_type}
                       </Badge>
                     </div>

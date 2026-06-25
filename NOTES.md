@@ -205,6 +205,20 @@ there's no self-serve invite/reset flow yet.
   Reference: `docs/catalyst.md` → https://catalyst.tailwindui.com/docs.
 - UI-only change; no core app logic touched. Typecheck + lint clean.
 
+### Catalyst components adopted (round 2)
+- Copied into `components/catalyst/` (committed): `button`, `badge`, `input`, `textarea`, `select`,
+  `fieldset`, `link` (Link wraps `next/link`). All have `'use client'`. Deps already installed.
+- **All native `<select>` → Catalyst `Select`** (styled-native, drop-in; same value/onChange/options):
+  grant-search (purpose), grant-pipeline (status/phase), grant-workspace (field-type), kb/documents/
+  grant-documents (category), settings (role ×2).
+- **All `Badge` → Catalyst `Badge`** with semantic colors via `lib/ui.ts` (`funderColor`, `statusColor`,
+  `sourceColor`): funder-type (blue/violet/amber/zinc), KB category + plan (emerald), source (kb=emerald/
+  ai=blue), tags/categories (zinc).
+- **Login** page: full Catalyst `Field`/`Label`/`Input`/`Button`. **Settings**: Catalyst `Input`/`Select`/
+  `Badge`/`Button` (text actions `color="emerald"` / `outline`); icon-only buttons kept as shadcn
+  (imported as `IconButton`) since Catalyst Button has no compact icon size.
+- Other pages keep shadcn `Button`/`Input` (now emerald-themed) — Catalyst + shadcn coexist fine.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

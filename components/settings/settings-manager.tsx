@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Button } from '@/components/catalyst/button'
+import { Button as IconButton } from '@/components/ui/button'
+import { Input } from '@/components/catalyst/input'
+import { Select } from '@/components/catalyst/select'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/components/catalyst/badge'
 import {
   Dialog,
   DialogContent,
@@ -245,7 +247,7 @@ export function SettingsManager() {
           </div>
           {isAdmin && (
             <div className="flex items-center gap-3">
-              <Button onClick={saveOrg} disabled={savingOrg || !orgName.trim()} variant="secondary">
+              <Button onClick={saveOrg} disabled={savingOrg || !orgName.trim()} color="emerald">
                 {savingOrg ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Save
               </Button>
@@ -260,7 +262,7 @@ export function SettingsManager() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">Team members</CardTitle>
           {isAdmin && (
-            <Button size="sm" onClick={() => setOpen(true)}>
+            <Button color="emerald" onClick={() => setOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
               Add member
             </Button>
@@ -282,24 +284,25 @@ export function SettingsManager() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {isAdmin && m.id !== meId ? (
-                      <select
+                      <Select
                         value={m.role}
                         onChange={(e) => changeRole(m.id, e.target.value)}
-                        className="h-7 rounded-md border bg-transparent px-2 text-xs capitalize focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        aria-label="Role"
+                        className="w-28 capitalize"
                       >
                         {USER_ROLES.map((r) => (
                           <option key={r} value={r}>
                             {r}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                     ) : (
-                      <Badge variant="outline" className="capitalize">
+                      <Badge color="zinc" className="capitalize">
                         {m.role}
                       </Badge>
                     )}
                     {isAdmin && (
-                      <Button
+                      <IconButton
                         variant="ghost"
                         size="icon-sm"
                         onClick={() => resetPassword(m)}
@@ -307,13 +310,13 @@ export function SettingsManager() {
                       >
                         <KeyRound className="h-3.5 w-3.5" />
                         <span className="sr-only">Reset password</span>
-                      </Button>
+                      </IconButton>
                     )}
                     {isAdmin && m.id !== meId && (
-                      <Button variant="ghost" size="icon-sm" onClick={() => removeMember(m)}>
+                      <IconButton variant="ghost" size="icon-sm" onClick={() => removeMember(m)}>
                         <Trash2 className="h-3.5 w-3.5" />
                         <span className="sr-only">Remove</span>
-                      </Button>
+                      </IconButton>
                     )}
                   </div>
                 </li>
@@ -331,7 +334,7 @@ export function SettingsManager() {
         <CardContent className="space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-sm">Current plan:</span>
-            <Badge variant="secondary" className="capitalize">
+            <Badge color="emerald" className="capitalize">
               {plan}
             </Badge>
           </div>
@@ -347,24 +350,19 @@ export function SettingsManager() {
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               {plan === 'free' && (
-                <Button size="sm" onClick={() => upgrade('basic')} disabled={billingBusy}>
+                <Button color="emerald" onClick={() => upgrade('basic')} disabled={billingBusy}>
                   {billingBusy && <Loader2 className="h-4 w-4 animate-spin" />}
                   Upgrade to Basic — $5/mo
                 </Button>
               )}
               {plan !== 'pro' && (
-                <Button size="sm" onClick={() => upgrade('pro')} disabled={billingBusy}>
+                <Button color="emerald" onClick={() => upgrade('pro')} disabled={billingBusy}>
                   {billingBusy && <Loader2 className="h-4 w-4 animate-spin" />}
                   Upgrade to Pro — $25/mo
                 </Button>
               )}
               {plan !== 'free' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={openPortal}
-                  disabled={billingBusy}
-                >
+                <Button outline onClick={openPortal} disabled={billingBusy}>
                   Manage billing
                 </Button>
               )}
@@ -397,18 +395,18 @@ export function SettingsManager() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="m-role">Role</Label>
-                <select
+                <Select
                   id="m-role"
                   value={mRole}
                   onChange={(e) => setMRole(e.target.value)}
-                  className="h-9 w-full rounded-md border bg-transparent px-3 text-sm capitalize focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="capitalize"
                 >
                   {USER_ROLES.map((r) => (
                     <option key={r} value={r}>
                       {r}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="m-pass">Temp password</Label>
@@ -424,10 +422,11 @@ export function SettingsManager() {
             {addError && <p className="text-sm text-destructive">{addError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={adding}>
+            <Button outline onClick={() => setOpen(false)} disabled={adding}>
               Cancel
             </Button>
             <Button
+              color="emerald"
               onClick={addMember}
               disabled={adding || !mEmail.trim() || !mName.trim() || mPassword.length < 8}
             >

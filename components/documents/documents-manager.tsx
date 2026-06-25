@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/components/catalyst/badge'
+import { Select } from '@/components/catalyst/select'
 import { Upload, Trash2, ExternalLink, Loader2 } from 'lucide-react'
 import { DOCUMENT_CATEGORIES } from '@/lib/schemas'
 
@@ -78,17 +79,18 @@ export function DocumentsManager() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <Select
           value={category}
           onChange={(e) => setCategory(e.target.value)}
-          className="h-9 rounded-md border bg-transparent px-3 text-sm capitalize focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          aria-label="Document category"
+          className="capitalize sm:w-56"
         >
           {DOCUMENT_CATEGORIES.map((c) => (
             <option key={c} value={c}>
               {c.replace(/_/g, ' ')}
             </option>
           ))}
-        </select>
+        </Select>
         <input ref={fileInput} type="file" hidden onChange={onFile} />
         <Button onClick={() => fileInput.current?.click()} disabled={uploading}>
           {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -122,7 +124,7 @@ export function DocumentsManager() {
                     <ExternalLink className="ml-1 inline h-3 w-3 align-baseline" />
                   </a>
                   <div>
-                    <Badge variant="secondary" className="capitalize">
+                    <Badge color="zinc" className="capitalize">
                       {d.category.replace(/_/g, ' ')}
                     </Badge>
                   </div>
