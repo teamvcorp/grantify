@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Licensed Catalyst kit (reference source + its own demo app) — not our code.
+    "catalyst-ui-kit/**",
   ]),
 ]);
 

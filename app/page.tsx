@@ -95,7 +95,12 @@ export default function LandingPage() {
 
       {/* Header */}
       <header className="flex h-16 items-center justify-between border-b px-6">
-        <span className="text-lg font-semibold tracking-tight">Grantify</span>
+        <span className="flex items-center gap-2 text-lg font-semibold tracking-tight">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+            G
+          </span>
+          Grantify
+        </span>
         <nav className="flex items-center gap-2">
           <Button variant="ghost" size="sm" render={<Link href="/login" />}>
             Sign in

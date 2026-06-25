@@ -150,7 +150,7 @@ there's no self-serve invite/reset flow yet.
   `priceIdFor`), `lib/plan.ts` (`PLANS` + `memberLimit`). Routes `/api/billing/checkout|portal|webhook`
   (webhook reads raw `req.text()` for signature verify; sets `org.plan` from metadata). Member cap is
   the live gate in `/api/team` POST. Settings shows upgrade/portal when configured, else a "add keys"
-  note. **Needs real STRIPE_* keys + STRIPE_PRICE_PRO/TEAM to function** (in `.env.example`).
+  note. **Needs real STRIPE_* keys + BASIC_GRANTS_PLAN/PRO_GRANTS_PLAN to function** (in `.env.example`).
 - **Password reset (admin)**: `MemberPatch` now accepts `password`; `PATCH /api/team/[id]` hashes it;
   Settings has a per-member key icon. (Self-serve email invite/reset still deferred — no email provider.)
 
@@ -187,8 +187,23 @@ there's no self-serve invite/reset flow yet.
 - Full setup report: `docs/stripe-setup.md`. Webhook URL `https://www.getgrantify.com/api/billing/webhook`.
 - Events the handler acts on: `checkout.session.completed`, `customer.subscription.updated`
   (added — resyncs plan via `planFromPriceId`), `customer.subscription.deleted`.
-- Still needs from the user: `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_TEAM`
-  (test `sk_`/`pk_` keys are now set in `.env.local`).
+- Plans: Free $0 / Basic $5 / Pro $25 (`lib/plan.ts`). Price-id env vars: `BASIC_GRANTS_PLAN`,
+  `PRO_GRANTS_PLAN` (both set in `.env.local`). Still needs: `STRIPE_WEBHOOK_SECRET`.
+
+## UI / theme (warm emerald lift)
+
+- Design tokens in `app/globals.css` retuned from pure grayscale to **warm stone neutrals (hue ~83)
+  + emerald primary (hue ~162)**, light + dark. Everything reads these tokens, so the whole app
+  lifted at once. Radius bumped to `0.7rem`. Accent stays neutral-warm (green reserved for primary).
+- Brand mark (emerald "G" tile) added to the sidebar header + landing header; OG image gradient →
+  emerald. Active sidebar nav item is emerald (`bg-primary`).
+- **Catalyst UI kit**: licensed (Tailwind Plus — license held). Raw kit in `catalyst-ui-kit/` is
+  **gitignored** + excluded from `tsconfig` (`exclude`) and ESLint (`globalIgnores`) because its
+  bundled demo app has unresolved deps (@heroicons, @/data). Deps installed: `@headlessui/react`,
+  `motion`, `clsx`. We adopted Catalyst's *design language* via tokens; swapping in actual Catalyst
+  *components* (Button/Input/Listbox/Dialog) surface-by-surface is the optional next UI step.
+  Reference: `docs/catalyst.md` → https://catalyst.tailwindui.com/docs.
+- UI-only change; no core app logic touched. Typecheck + lint clean.
 
 ## Status — what's next (still deferred)
 

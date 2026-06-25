@@ -29,6 +29,9 @@ export function Sidebar() {
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r bg-muted/30 md:flex">
       <div className="flex h-14 items-center gap-2 border-b px-5">
+        <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+          G
+        </span>
         <span className="text-lg font-semibold tracking-tight">Grant OS</span>
       </div>
       <nav className="flex-1 space-y-1 p-3">
@@ -59,7 +62,17 @@ export function Sidebar() {
           <LogOut className="h-4 w-4" />
           Sign out
         </button>
-        <p className="px-3 text-xs text-muted-foreground">501(c)(3) grant workspace</p>
+        <p className="px-3 text-xs text-muted-foreground">
+          501(c)(3) grant workspace · a project of{' '}
+          <a
+            href="https://www.thevacorp.com"
+            target="_blank"
+            rel="noopener"
+            className="underline-offset-2 hover:underline"
+          >
+            The VA Corp
+          </a>
+        </p>
       </div>
     </aside>
   )

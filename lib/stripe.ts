@@ -26,15 +26,15 @@ export function billingConfigured(): boolean {
 
 /** Map a paid plan to its configured Stripe Price id. */
 export function priceIdFor(plan: Plan): string | undefined {
-  if (plan === 'pro') return process.env.STRIPE_PRICE_PRO
-  if (plan === 'team') return process.env.STRIPE_PRICE_TEAM
+  if (plan === 'basic') return process.env.BASIC_GRANTS_PLAN
+  if (plan === 'pro') return process.env.PRO_GRANTS_PLAN
   return undefined
 }
 
 /** Reverse map: a Stripe Price id back to our plan (null if it doesn't match). */
 export function planFromPriceId(priceId: string | null | undefined): Plan | null {
   if (!priceId) return null
-  if (priceId === process.env.STRIPE_PRICE_PRO) return 'pro'
-  if (priceId === process.env.STRIPE_PRICE_TEAM) return 'team'
+  if (priceId === process.env.BASIC_GRANTS_PLAN) return 'basic'
+  if (priceId === process.env.PRO_GRANTS_PLAN) return 'pro'
   return null
 }

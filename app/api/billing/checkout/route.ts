@@ -5,11 +5,12 @@ import { getStripe, billingConfigured, priceIdFor } from '@/lib/stripe'
 
 /**
  * POST /api/billing/checkout — start a Stripe Checkout session for a paid plan.
- * Admin only. Requires STRIPE_SECRET_KEY + the plan's STRIPE_PRICE_* env to be set.
+ * Admin only. Requires STRIPE_SECRET_KEY + the plan's price-id env (BASIC_GRANTS_PLAN /
+ * PRO_GRANTS_PLAN) to be set.
  */
 export const runtime = 'nodejs'
 
-const BodySchema = z.object({ plan: z.enum(['pro', 'team']) })
+const BodySchema = z.object({ plan: z.enum(['basic', 'pro']) })
 
 export async function POST(req: Request) {
   const session = await auth()

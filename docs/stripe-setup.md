@@ -10,23 +10,23 @@ How to configure Stripe for Grantify (getgrantify.com). The billing code is in
 | `STRIPE_SECRET_KEY` | Dashboard → Developers → API keys (`sk_test_…` / `sk_live_…`) | set (test) |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | same page (`pk_test_…` / `pk_live_…`) | set (test) |
 | `STRIPE_WEBHOOK_SECRET` | created when you add the webhook endpoint (step 3) — `whsec_…` | **needed** |
-| `STRIPE_PRICE_PRO` | Products → Pro → Price id (`price_…`) | **needed** |
-| `STRIPE_PRICE_TEAM` | Products → Team → Price id (`price_…`) | **needed** |
+| `BASIC_GRANTS_PLAN` | Products → Basic → Price id (`price_…`) | set |
+| `PRO_GRANTS_PLAN` | Products → Pro → Price id (`price_…`) | set |
 
 > Use **test-mode** keys + a **test-mode** webhook together; switch all of them to live at launch.
 > After changing env vars, restart the dev server (Next reads env at boot).
 
 ## 2. Products & prices
 
-Create two recurring products in **Stripe → Products**:
+Two recurring products in **Stripe → Products**:
 
-| Plan | Suggested price | Env var to set with the Price id |
-|------|-----------------|----------------------------------|
-| Pro  | $49 / month     | `STRIPE_PRICE_PRO`  |
-| Team | $149 / month    | `STRIPE_PRICE_TEAM` |
+| Plan  | Price        | Env var holding the Price id |
+|-------|--------------|------------------------------|
+| Basic | $5 / month   | `BASIC_GRANTS_PLAN` |
+| Pro   | $25 / month  | `PRO_GRANTS_PLAN`   |
 
-These match `lib/plan.ts` (`PLANS`). The member caps enforced today: Free = 2, Pro = 10,
-Team = unlimited (gate is in `POST /api/team`).
+These match `lib/plan.ts` (`PLANS`). Member caps enforced today: Free = 2, Basic = 10,
+Pro = unlimited (gate is in `POST /api/team`; adjust caps in `lib/plan.ts`).
 
 ## 3. Webhook endpoint
 
@@ -78,7 +78,7 @@ Test card for Checkout: `4242 4242 4242 4242`, any future expiry, any CVC/ZIP.
 ## 6. Go-live checklist
 
 - [ ] Live `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
-- [ ] Live products + `STRIPE_PRICE_PRO` / `STRIPE_PRICE_TEAM`
+- [ ] Live products + `BASIC_GRANTS_PLAN` / `PRO_GRANTS_PLAN`
 - [ ] Live webhook at `https://www.getgrantify.com/api/billing/webhook` → live `STRIPE_WEBHOOK_SECRET`
 - [ ] Enable the Customer Portal (Settings → Billing → Customer portal) in the Stripe dashboard
 - [ ] Set all env vars in the Vercel project (not just `.env.local`)

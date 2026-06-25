@@ -134,7 +134,7 @@ export function SettingsManager() {
     }
   }
 
-  async function upgrade(target: 'pro' | 'team') {
+  async function upgrade(target: 'basic' | 'pro') {
     setBillingBusy(true)
     setBillingMsg(null)
     try {
@@ -341,21 +341,21 @@ export function SettingsManager() {
           ) : !billingConfigured ? (
             <p className="text-sm text-muted-foreground">
               Billing isn&apos;t configured yet. Add <code>STRIPE_SECRET_KEY</code>,{' '}
-              <code>STRIPE_WEBHOOK_SECRET</code>, and the <code>STRIPE_PRICE_*</code> env vars to
-              enable upgrades.
+              <code>STRIPE_WEBHOOK_SECRET</code>, <code>BASIC_GRANTS_PLAN</code>, and{' '}
+              <code>PRO_GRANTS_PLAN</code> to enable upgrades.
             </p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
+              {plan === 'free' && (
+                <Button size="sm" onClick={() => upgrade('basic')} disabled={billingBusy}>
+                  {billingBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Upgrade to Basic — $5/mo
+                </Button>
+              )}
               {plan !== 'pro' && (
                 <Button size="sm" onClick={() => upgrade('pro')} disabled={billingBusy}>
                   {billingBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Upgrade to Pro
-                </Button>
-              )}
-              {plan !== 'team' && (
-                <Button size="sm" onClick={() => upgrade('team')} disabled={billingBusy}>
-                  {billingBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Upgrade to Team
+                  Upgrade to Pro — $25/mo
                 </Button>
               )}
               {plan !== 'free' && (

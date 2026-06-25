@@ -41,3 +41,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Tailwind Catalyst UI kit — licensed (Tailwind Plus); reference source, do not commit.
+# Components we actually adopt are copied into components/ and committed.
+catalyst-ui-kit/

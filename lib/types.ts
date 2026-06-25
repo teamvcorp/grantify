@@ -50,7 +50,7 @@ export type KbCategory =
 
 export type UserRole = 'admin' | 'member' | 'viewer'
 
-export type Plan = 'free' | 'pro' | 'team'
+export type Plan = 'free' | 'basic' | 'pro'
 
 export type ActivityType =
   | 'status_change'

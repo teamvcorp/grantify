@@ -19,12 +19,12 @@ export default function OgImage() {
           flexDirection: 'column',
           justifyContent: 'center',
           padding: '80px',
-          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+          background: 'linear-gradient(135deg, #022c22 0%, #064e3b 55%, #047857 100%)',
           color: 'white',
           fontFamily: 'sans-serif',
         }}
       >
-        <div style={{ fontSize: 40, fontWeight: 700, opacity: 0.7 }}>Grantify</div>
+        <div style={{ fontSize: 40, fontWeight: 700, color: '#6ee7b7' }}>Grantify</div>
         <div style={{ fontSize: 68, fontWeight: 700, lineHeight: 1.1, marginTop: 24 }}>
           From grant discovery to submission — in a week
         </div>
