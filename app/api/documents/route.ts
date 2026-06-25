@@ -5,6 +5,7 @@ import { put } from '@vercel/blob'
 import { auth } from '@/lib/auth'
 import { documents } from '@/lib/collections'
 import { DOCUMENT_CATEGORIES } from '@/lib/schemas'
+import { logActivity } from '@/lib/activity'
 import type { DocumentCategory, OrgDocument } from '@/lib/types'
 
 /**
@@ -28,16 +29,19 @@ function toClient(d: OrgDocument) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth()
   if (!session?.user?.org_id) {
     return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
   }
+  const filter: Record<string, unknown> = { org_id: new ObjectId(session.user.org_id) }
+  // ?grant_id=<id> → just that grant's documents; otherwise the whole vault.
+  const grantId = new URL(req.url).searchParams.get('grant_id')
+  if (grantId && ObjectId.isValid(grantId)) {
+    filter.grant_id = new ObjectId(grantId)
+  }
   const col = await documents()
-  const docs = await col
-    .find({ org_id: new ObjectId(session.user.org_id) })
-    .sort({ uploaded_at: -1 })
-    .toArray()
+  const docs = await col.find(filter).sort({ uploaded_at: -1 }).toArray()
   return NextResponse.json({ documents: docs.map(toClient) })
 }
 
@@ -71,6 +75,13 @@ export async function POST(req: Request) {
 
   const orgId = new ObjectId(session.user.org_id)
 
+  // Optional grant scoping — attach the upload to a specific grant.
+  const rawGrant = form.get('grant_id')
+  const grantId =
+    typeof rawGrant === 'string' && ObjectId.isValid(rawGrant)
+      ? new ObjectId(rawGrant)
+      : null
+
   // Namespacing the blob path by org keeps tenants' files separate.
   let blobUrl: string
   try {
@@ -87,16 +98,27 @@ export async function POST(req: Request) {
   const col = await documents()
   const res = await col.insertOne({
     org_id: orgId,
-    grant_id: null,
+    grant_id: grantId,
     name: file.name,
     category,
-    scope: 'org',
+    scope: grantId ? 'grant' : 'org',
     blob_url: blobUrl,
     file_type: file.type || 'application/octet-stream',
     version: 1,
     uploaded_by: new ObjectId(session.user.id),
     uploaded_at: new Date(),
   })
+
+  if (grantId) {
+    await logActivity({
+      grant_id: grantId,
+      org_id: orgId,
+      user_id: new ObjectId(session.user.id),
+      type: 'doc_uploaded',
+      detail: `Uploaded "${file.name}".`,
+    })
+  }
+
   const created = await col.findOne({ _id: res.insertedId })
   return NextResponse.json({ document: toClient(created!) }, { status: 201 })
 }

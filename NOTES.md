@@ -122,6 +122,18 @@ Purpose + 2 grants + 2 KB entries only if the org has no purposes yet. Needs `ts
 Lint note: `react-hooks/set-state-in-effect` (React Compiler rule) errors on a synchronous setState
 call from an effect — wrap fetch-on-mount as `useEffect(() => { void (async () => { await load() })() }, [])`.
 
+## Settings (done)
+
+- `GET`/`PATCH /api/org` (profile name/EIN — PATCH admin-only; GET also returns caller `role`).
+- `GET`/`POST /api/team` (list + add member, admin-only; dup email → 409 via unique index) and
+  `PATCH`/`DELETE /api/team/[id]` (role change / remove — admin-only; can't target yourself).
+- UI `components/settings/settings-manager.tsx`: org form, team list (inline role select + remove),
+  plan/billing panel (Stripe = V2, disabled). Non-admins see read-only.
+- `USER_ROLES`/`OrgUpdate`/`MemberInput`/`MemberPatch` in `lib/schemas.ts`.
+
+All six nav items now route to real features. Adding a member sets a temp password the admin shares;
+there's no self-serve invite/reset flow yet.
+
 ## Status — what's next (deferred V2)
 
 1. Budget builder (no `budgets` collection yet — would add one + UI).

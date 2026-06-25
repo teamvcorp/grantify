@@ -1,6 +1,7 @@
 import { getDb } from './mongodb'
 import type {
   Activity,
+  Budget,
   Grant,
   GrantForm,
   KnowledgeBaseEntry,
@@ -50,4 +51,8 @@ export async function users() {
 
 export async function activities() {
   return (await getDb()).collection<Activity>('activities')
+}
+
+export async function budgets() {
+  return (await getDb()).collection<Budget>('budgets')
 }

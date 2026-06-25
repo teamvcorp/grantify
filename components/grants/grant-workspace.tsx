@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -15,7 +15,11 @@ import {
   Save,
   Loader2,
   ArrowLeft,
+  Printer,
 } from 'lucide-react'
+import { BudgetPanel } from '@/components/grants/budget-panel'
+import { ActivityPanel } from '@/components/grants/activity-panel'
+import { GrantDocumentsPanel } from '@/components/grants/grant-documents-panel'
 
 interface Grant {
   id: string
@@ -59,6 +63,9 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   const [savingNarrative, setSavingNarrative] = useState(false)
 
   const [narrative, setNarrative] = useState('')
+  // Bumped after actions that write activity, to refresh the activity panel.
+  const [activityKey, setActivityKey] = useState(0)
+  const bumpActivity = () => setActivityKey((k) => k + 1)
 
   const loadForm = useCallback(async () => {
     const res = await fetch(`/api/grants/${grantId}/form`)
@@ -109,6 +116,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Generation failed.')
       setForm(data.form)
+      bumpActivity()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed.')
     } finally {
@@ -176,7 +184,49 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
       setError(err instanceof Error ? err.message : 'Draft failed.')
     } finally {
       setDrafting(false)
+      bumpActivity()
     }
+  }
+
+  function exportPdf() {
+    if (!form || !grant) return
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const sections = form.sections
+      .map((section) => {
+        const rows = form.fields
+          .filter((f) => f.section === section)
+          .map(
+            (f) =>
+              `<div class="field"><div class="q">${esc(f.question)}</div><div class="a">${
+                esc(f.answer) || '<em>—</em>'
+              }</div></div>`
+          )
+          .join('')
+        return `<h2>${esc(section)}</h2>${rows}`
+      })
+      .join('')
+    const narr = narrative
+      ? `<h2>Narrative</h2><div class="narr">${esc(narrative).replace(/\n/g, '<br/>')}</div>`
+      : ''
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(
+      grant.name
+    )}</title><style>
+      body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:32px auto;padding:0 16px;color:#111}
+      h1{font-size:20px} h2{font-size:15px;margin-top:24px;border-bottom:1px solid #ddd;padding-bottom:4px}
+      .field{margin:10px 0} .q{font-weight:600} .a{white-space:pre-wrap} .narr{white-space:pre-wrap}
+      .muted{color:#666}
+    </style></head><body>
+      <h1>${esc(grant.name)}</h1>
+      <p class="muted">${esc(grant.funder)} · ${esc(grant.funder_type)}</p>
+      ${sections}${narr}
+    </body></html>`
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    w.print()
   }
 
   async function saveNarrative() {
@@ -222,6 +272,10 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
         <Button variant="outline" onClick={draft} disabled={!form || drafting}>
           {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
           Draft narrative
+        </Button>
+        <Button variant="ghost" onClick={exportPdf} disabled={!form}>
+          <Printer className="h-4 w-4" />
+          Export PDF
         </Button>
       </div>
 
@@ -325,6 +379,34 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           </div>
         </div>
       )}
+
+      {/* Grant-level panels (independent of the form) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Budget</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BudgetPanel grantId={grantId} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Documents</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <GrantDocumentsPanel grantId={grantId} onChange={bumpActivity} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ActivityPanel grantId={grantId} refreshKey={activityKey} />
+        </CardContent>
+      </Card>
     </div>
   )
 }

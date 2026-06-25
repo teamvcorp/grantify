@@ -189,3 +189,21 @@ export interface Activity {
   detail: string
   created_at: Date
 }
+
+export interface BudgetLineItem {
+  id: string // uuid
+  category: string
+  description: string
+  amount: number
+}
+
+/** One budget per grant (line items + a notes block). */
+export interface Budget {
+  _id?: ObjectId
+  org_id: ObjectId
+  grant_id: ObjectId
+  items: BudgetLineItem[]
+  notes: string
+  created_at: Date
+  updated_at: Date
+}

@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb'
 import { auth } from '@/lib/auth'
 import { grants } from '@/lib/collections'
 import { GrantPatch } from '@/lib/schemas'
+import { logActivity } from '@/lib/activity'
 import type { Grant, GrantPhase } from '@/lib/types'
 
 /**
@@ -14,8 +15,13 @@ async function orgFilter(id: string) {
   const session = await auth()
   if (!session?.user?.org_id) return { error: 'Not authenticated.', status: 401 as const }
   if (!ObjectId.isValid(id)) return { error: 'Invalid id.', status: 400 as const }
+  const orgId = new ObjectId(session.user.org_id)
+  const grantOid = new ObjectId(id)
   return {
-    filter: { _id: new ObjectId(id), org_id: new ObjectId(session.user.org_id) },
+    orgId,
+    grantOid,
+    userId: new ObjectId(session.user.id),
+    filter: { _id: grantOid, org_id: orgId },
   }
 }
 
@@ -82,6 +88,16 @@ export async function PATCH(
   const result = await col.updateOne(scope.filter, { $set: update })
   if (result.matchedCount === 0) {
     return NextResponse.json({ error: 'Grant not found.' }, { status: 404 })
+  }
+
+  if (parsed.data.status) {
+    await logActivity({
+      grant_id: scope.grantOid,
+      org_id: scope.orgId,
+      user_id: scope.userId,
+      type: 'status_change',
+      detail: `Status changed to ${parsed.data.status}.`,
+    })
   }
   return NextResponse.json({ ok: true })
 }

@@ -77,6 +77,32 @@ export const KbInput = z.object({
 })
 export type KbInput = z.infer<typeof KbInput>
 
+export const USER_ROLES = ['admin', 'member', 'viewer'] as const
+
+/** Organization profile edits (admin only). */
+export const OrgUpdate = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  ein: z.string().trim().max(20).optional(),
+})
+
+/** Add a team member (admin only). */
+export const MemberInput = z.object({
+  email: z.email(),
+  name: z.string().trim().min(1).max(120),
+  role: z.enum(USER_ROLES).default('member'),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(200),
+})
+
+/** Change a member's role and/or reset their password (admin only). */
+export const MemberPatch = z
+  .object({
+    role: z.enum(USER_ROLES).optional(),
+    password: z.string().min(8, 'Password must be at least 8 characters').max(200).optional(),
+  })
+  .refine((d) => d.role !== undefined || d.password !== undefined, {
+    message: 'Provide a role or a password.',
+  })
+
 export const DOCUMENT_CATEGORIES = [
   'irs_letter',
   'financials',
@@ -87,6 +113,22 @@ export const DOCUMENT_CATEGORIES = [
   'support_letter',
   'other',
 ] as const
+
+/** Replace a grant's budget (full PUT — items + notes). */
+export const BudgetInput = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string(),
+        category: z.string().trim().max(120).default(''),
+        description: z.string().trim().max(500).default(''),
+        amount: z.number().min(0).max(1_000_000_000).default(0),
+      })
+    )
+    .max(200)
+    .default([]),
+  notes: z.string().max(5000).default(''),
+})
 
 /** Save edits to a generated GrantForm (manual field answers + narrative). */
 export const FormPatch = z.object({
