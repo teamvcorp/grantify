@@ -136,9 +136,22 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ purpose_id: purposeId }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Discovery failed.')
-      setAiResults(data.results)
+      // Read as text first: a platform 5xx (e.g. timeout) returns a non-JSON
+      // body, which res.json() would choke on with a confusing parse error.
+      const text = await res.text()
+      let data: { error?: string; results?: AiResult[] } | null = null
+      try {
+        data = text ? JSON.parse(text) : null
+      } catch {
+        data = null
+      }
+      if (!res.ok || !data) {
+        throw new Error(
+          data?.error ||
+            `Discovery failed (HTTP ${res.status})${res.status === 504 ? ' — the request timed out.' : ''}.`
+        )
+      }
+      setAiResults(data.results ?? [])
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Discovery failed.')
       setAiResults(null)

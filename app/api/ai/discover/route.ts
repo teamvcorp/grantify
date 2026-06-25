@@ -26,8 +26,9 @@ import { purposes } from '@/lib/collections'
  */
 
 export const runtime = 'nodejs'
-// Web search + model reasoning can take a while; give the function headroom.
-export const maxDuration = 60
+// Web search + model reasoning is slow; give the function as much headroom as
+// the Vercel plan allows (Pro caps at 300s; Hobby clamps to 60s).
+export const maxDuration = 300
 
 const BodySchema = z.object({ purpose_id: z.string().min(1) })
 
@@ -83,36 +84,38 @@ If you cannot find solid matches, return an empty array []. Do not invent funder
 }
 
 export async function POST(req: Request) {
-  // 1. AuthN + tenant context.
-  const session = await auth()
-  if (!session?.user?.org_id) {
-    return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
-  }
-
-  // 2. Validate body.
-  let body: unknown
+  // One outer try so EVERY failure path (auth, DB, Anthropic, parsing) returns
+  // JSON — never an unhandled 500 with a non-JSON body.
   try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
-  }
-  const parsed = BodySchema.safeParse(body)
-  if (!parsed.success || !ObjectId.isValid(parsed.data.purpose_id)) {
-    return NextResponse.json({ error: 'A valid purpose_id is required.' }, { status: 400 })
-  }
+    // 1. AuthN + tenant context.
+    const session = await auth()
+    if (!session?.user?.org_id) {
+      return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 })
+    }
 
-  // 3. Load the Purpose — ORG-SCOPED (never by id alone).
-  const purposesCol = await purposes()
-  const purpose = await purposesCol.findOne({
-    _id: new ObjectId(parsed.data.purpose_id),
-    org_id: new ObjectId(session.user.org_id),
-  })
-  if (!purpose) {
-    return NextResponse.json({ error: 'Purpose not found.' }, { status: 404 })
-  }
+    // 2. Validate body.
+    let body: unknown
+    try {
+      body = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
+    }
+    const parsed = BodySchema.safeParse(body)
+    if (!parsed.success || !ObjectId.isValid(parsed.data.purpose_id)) {
+      return NextResponse.json({ error: 'A valid purpose_id is required.' }, { status: 400 })
+    }
 
-  // 4. Ask Claude, resuming across any server-tool pauses.
-  try {
+    // 3. Load the Purpose — ORG-SCOPED (never by id alone).
+    const purposesCol = await purposes()
+    const purpose = await purposesCol.findOne({
+      _id: new ObjectId(parsed.data.purpose_id),
+      org_id: new ObjectId(session.user.org_id),
+    })
+    if (!purpose) {
+      return NextResponse.json({ error: 'Purpose not found.' }, { status: 404 })
+    }
+
+    // 4. Ask Claude, resuming across any server-tool pauses.
     const client = getAnthropic()
     const tools = [{ ...WEB_SEARCH_TOOL, max_uses: 5 }]
     const messages: Parameters<typeof client.messages.create>[0]['messages'] = [
