@@ -134,13 +134,31 @@ call from an effect — wrap fetch-on-mount as `useEffect(() => { void (async ()
 All six nav items now route to real features. Adding a member sets a temp password the admin shares;
 there's no self-serve invite/reset flow yet.
 
-## Status — what's next (deferred V2)
+## V2 (done)
 
-1. Budget builder (no `budgets` collection yet — would add one + UI).
-2. PDF export of the form/narrative.
-3. Stripe scaffold (plan gates) — env vars already in `.env.example`.
-4. Grant-specific documents (currently all uploads are org-scoped; `OrgDocument.grant_id` supports it).
-5. Activity log UI surface (entries are written; nothing renders them yet).
+- **Budget builder**: `Budget` type + `budgets()` collection; `GET`/`PUT /api/grants/[id]/budget`
+  (one doc per grant, full replace); `BudgetInput` schema; `components/grants/budget-panel.tsx`
+  (line items + total + notes) in the workspace.
+- **Grant-scoped documents**: `/api/documents` POST accepts `grant_id` (scope 'grant', logs
+  doc_uploaded); GET takes `?grant_id=`; `grant-documents-panel.tsx` in the workspace. The
+  Documents page still shows the whole vault.
+- **Activity log UI**: `GET /api/grants/[id]/activity`; `activity-panel.tsx`. Entries written on
+  form_generated, narrative_drafted, status_change, doc_uploaded. Workspace bumps `activityKey` to refresh.
+- **PDF export**: client-side `exportPdf()` in the workspace opens a print window built from the
+  form answers + narrative (no server/lib dependency).
+- **Stripe plan gates (scaffold)**: `lib/stripe.ts` (lazy, build-safe, `billingConfigured()`,
+  `priceIdFor`), `lib/plan.ts` (`PLANS` + `memberLimit`). Routes `/api/billing/checkout|portal|webhook`
+  (webhook reads raw `req.text()` for signature verify; sets `org.plan` from metadata). Member cap is
+  the live gate in `/api/team` POST. Settings shows upgrade/portal when configured, else a "add keys"
+  note. **Needs real STRIPE_* keys + STRIPE_PRICE_PRO/TEAM to function** (in `.env.example`).
+- **Password reset (admin)**: `MemberPatch` now accepts `password`; `PATCH /api/team/[id]` hashes it;
+  Settings has a per-member key icon. (Self-serve email invite/reset still deferred — no email provider.)
+
+## Status — what's next (still deferred)
+
+1. Self-serve invite + email-based password reset (needs an email provider — Resend/SES).
+2. Atlas Vector Search for KB matching at scale (`embedding_text` reserved).
+3. Real Stripe wiring verification once keys/prices exist (end-to-end checkout + webhook test).
 3. Knowledge base CRUD + matching, document vault (Vercel Blob), budget, PDF export, activity log.
 4. Stripe scaffold (plan gates) — V2.
 
