@@ -166,6 +166,26 @@ there's no self-serve invite/reset flow yet.
 - Team add sends a best-effort welcome email (login link only — **never** the password).
 - Verified live: a real send from `grants@fyht4.com` succeeded.
 
+## SEO (done) — public domain getgrantify.com
+
+- Public brand is **"Grantify"** (domain getgrantify.com); internal app stays "Grant OS".
+- `app/page.tsx` is now a real public, indexable landing page (was a redirect to /dashboard) with
+  hero + features + JSON-LD (`SoftwareApplication`). Proxy leaves `/` public.
+- `app/layout.tsx` metadata: `metadataBase`, title template, description, keywords, OpenGraph,
+  Twitter card, robots index/follow.
+- Metadata routes: `app/robots.ts` (allow `/`, disallow app + /api + /login, sitemap+host),
+  `app/sitemap.ts`, `app/manifest.ts`, `app/opengraph-image.tsx` (dynamic `next/og` 1200×630 card).
+- All verified live (robots.txt, sitemap.xml, manifest.webmanifest, opengraph-image → image/png).
+- Landing CTAs use base-ui `<Button render={<Link/>}>` polymorphism.
+
+## Stripe webhook (report saved)
+
+- Full setup report: `docs/stripe-setup.md`. Webhook URL `https://www.getgrantify.com/api/billing/webhook`.
+- Events the handler acts on: `checkout.session.completed`, `customer.subscription.updated`
+  (added — resyncs plan via `planFromPriceId`), `customer.subscription.deleted`.
+- Still needs from the user: `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_TEAM`
+  (test `sk_`/`pk_` keys are now set in `.env.local`).
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

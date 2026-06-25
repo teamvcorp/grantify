@@ -30,3 +30,11 @@ export function priceIdFor(plan: Plan): string | undefined {
   if (plan === 'team') return process.env.STRIPE_PRICE_TEAM
   return undefined
 }
+
+/** Reverse map: a Stripe Price id back to our plan (null if it doesn't match). */
+export function planFromPriceId(priceId: string | null | undefined): Plan | null {
+  if (!priceId) return null
+  if (priceId === process.env.STRIPE_PRICE_PRO) return 'pro'
+  if (priceId === process.env.STRIPE_PRICE_TEAM) return 'team'
+  return null
+}

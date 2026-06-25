@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import type Stripe from 'stripe'
 import { orgs } from '@/lib/collections'
-import { getStripe } from '@/lib/stripe'
+import { getStripe, planFromPriceId } from '@/lib/stripe'
 import type { Plan } from '@/lib/types'
 
 /**
@@ -47,9 +47,18 @@ export async function POST(req: Request) {
         }
       )
     }
+  } else if (event.type === 'customer.subscription.updated') {
+    // Plan change / renewal / cancel-at-period-end → resync the org's plan.
+    const sub = event.data.object as Stripe.Subscription
+    const active = sub.status === 'active' || sub.status === 'trialing'
+    const plan = planFromPriceId(sub.items.data[0]?.price.id)
+    await col.updateOne(
+      { stripe_subscription_id: sub.id },
+      { $set: { plan: active && plan ? plan : 'free' } }
+    )
   } else if (event.type === 'customer.subscription.deleted') {
     const sub = event.data.object as Stripe.Subscription
-    // Downgrade the org whose subscription ended.
+    // Subscription ended → downgrade to free.
     await col.updateOne(
       { stripe_subscription_id: sub.id },
       { $set: { plan: 'free', stripe_subscription_id: null } }
