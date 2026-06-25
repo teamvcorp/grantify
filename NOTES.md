@@ -50,18 +50,41 @@ or `export const dynamic = 'force-dynamic'` on DB-backed pages.
 - This is an upgrade over the spec's "let Claude web-search for grants" — authoritative
   federal data. Claude discovery can complement it for foundation/state/corporate grants.
 
-## Status — what's done vs next
+## Auth & sessions (done)
 
-Done (deployable skeleton): scaffold, shadcn, core libs, env templates, Grants.gov search
-(end-to-end working without DB), sidebar + dashboard shell + stub pages.
+- `lib/auth.ts` — NextAuth v5: Credentials (email/password via DB) + Google (only when
+  `AUTH_GOOGLE_*` set). JWT sessions; `jwt`/`session` callbacks put `id`/`org_id`/`role`
+  on `session.user` (typed in `types/next-auth.d.ts`). Build-safe (no import-time throw).
+- `lib/password.ts` — scrypt (Node built-in, no dep). Self-describing hash `scrypt$N$r$p$salt$hash`;
+  `verifyPassword` is constant-time and never throws. Used by auth + seed.
+- `app/api/auth/[...nextauth]/route.ts` exports the NextAuth handlers.
+- `proxy.ts` (Next 16's renamed `middleware`) guards the app/(app) routes, redirects to `/login`.
+  API routes are excluded from the matcher — they call `auth()` and return 401 themselves.
+- `app/login` — minimal Credentials sign-in (server action + `useActionState`). Sidebar has sign-out.
 
-Next (needs credentials), roughly in spec build order:
-1. `lib/auth.ts` — NextAuth v5 (email/password + Google), wire `AUTH_SECRET`.
-2. `scripts/seed.ts` — default org, admin, example purpose/grants/KB.
-3. DB-backed dashboard aggregates + Purposes CRUD + Grant tracker/workspace.
-4. AI routes: `/api/ai/discover`, `/generate-form`, `/match-kb`, `/draft-narrative` (streaming).
-5. Knowledge base CRUD + matching, document vault (Vercel Blob), budget, PDF export, activity log.
-6. Stripe scaffold (plan gates) — V2.
+## Seed (done)
+
+`scripts/seed.ts`, run via `npm run seed` (= `tsx --env-file=.env.local scripts/seed.ts`).
+Idempotent: ensures indexes (unique `users.email`, org-scoped on the rest), upserts the org
+(`SEED_ORG_NAME`) + admin (`SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD`), and seeds one example
+Purpose + 2 grants + 2 KB entries only if the org has no purposes yet. Needs `tsx` (devDep) —
+`node --experimental-strip-types` can't resolve the extensionless `lib/` imports.
+
+## AI discovery (done — first AI route)
+
+- `POST /api/ai/discover` ({purpose_id}) — org-scoped Purpose load, then Claude + `web_search`
+  (`GRANT_OS_MODEL`, adaptive thinking, `pause_turn` resume loop, JSON via `parseJsonFromText`).
+  Finds foundation/state/corporate grants (complements federal Grants.gov). `maxDuration = 60`.
+- `GET /api/purposes` — list org purposes for the discovery dropdown.
+- UI: `components/grants/grant-search.tsx` now has a Purpose picker + "Discover with AI" section
+  alongside the federal results.
+
+## Status — what's next
+
+1. Purposes CRUD UI + DB-backed dashboard aggregates + Grant tracker/workspace.
+2. Remaining AI routes: `/generate-form`, `/match-kb`, `/draft-narrative` (streaming).
+3. Knowledge base CRUD + matching, document vault (Vercel Blob), budget, PDF export, activity log.
+4. Stripe scaffold (plan gates) — V2.
 
 ## KB matching note (spec ambiguity to resolve)
 

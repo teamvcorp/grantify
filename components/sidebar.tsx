@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { signOut } from 'next-auth/react'
 import {
   LayoutDashboard,
   Target,
@@ -9,6 +10,7 @@ import {
   BookOpen,
   FolderArchive,
   Settings,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -49,8 +51,15 @@ export function Sidebar() {
           )
         })}
       </nav>
-      <div className="border-t p-4 text-xs text-muted-foreground">
-        501(c)(3) grant workspace
+      <div className="space-y-2 border-t p-3">
+        <button
+          onClick={() => signOut({ callbackUrl: '/login' })}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
+        <p className="px-3 text-xs text-muted-foreground">501(c)(3) grant workspace</p>
       </div>
     </aside>
   )
