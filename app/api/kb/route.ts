@@ -19,6 +19,7 @@ function toClient(e: KnowledgeBaseEntry) {
     category: e.category,
     tags: e.tags,
     times_used: e.times_used,
+    purpose_id: e.purpose_id ? e.purpose_id.toString() : null,
   }
 }
 
@@ -55,10 +56,14 @@ export async function POST(req: Request) {
   }
 
   const now = new Date()
+  const { purpose_id, ...rest } = parsed.data
+  const purposeId =
+    purpose_id && ObjectId.isValid(purpose_id) ? new ObjectId(purpose_id) : null
   const col = await knowledgeBase()
   const res = await col.insertOne({
     org_id: new ObjectId(session.user.org_id),
-    ...parsed.data,
+    ...rest,
+    purpose_id: purposeId,
     // embedding_text is retained for a future Atlas Vector Search upgrade; for now
     // matching is Claude-judged (see NOTES.md), so we just store question + answer.
     embedding_text: `${parsed.data.question}\n${parsed.data.answer}`,

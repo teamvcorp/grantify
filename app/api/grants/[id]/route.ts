@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { grants } from '@/lib/collections'
 import { GrantPatch } from '@/lib/schemas'
 import { logActivity } from '@/lib/activity'
+import { promoteFormToKb } from '@/lib/kb-promote'
 import type { Grant, GrantPhase } from '@/lib/types'
 
 /**
@@ -98,6 +99,21 @@ export async function PATCH(
       type: 'status_change',
       detail: `Status changed to ${parsed.data.status}.`,
     })
+
+    // On submission, learn from the finished application: promote its answers
+    // into the knowledge base. Best-effort — never fail the status update.
+    if (parsed.data.status === 'submitted') {
+      const promoted = await promoteFormToKb(scope.orgId, scope.grantOid).catch(() => null)
+      if (promoted && promoted.added + promoted.updated > 0) {
+        await logActivity({
+          grant_id: scope.grantOid,
+          org_id: scope.orgId,
+          user_id: scope.userId,
+          type: 'note_added',
+          detail: `Learned ${promoted.added} new and refreshed ${promoted.updated} knowledge base answer(s).`,
+        })
+      }
+    }
   }
   return NextResponse.json({ ok: true })
 }

@@ -219,6 +219,18 @@ there's no self-serve invite/reset flow yet.
   (imported as `IconButton`) since Catalyst Button has no compact icon size.
 - Other pages keep shadcn `Button`/`Input` (now emerald-themed) — Catalyst + shadcn coexist fine.
 
+## Knowledge base feedback loop (done)
+
+- **Read:** `/api/ai/match-kb` fills a form from existing entries.
+- **Write (manual):** `POST /api/grants/[id]/promote-kb` + "Save answers to knowledge base" button.
+- **Write (auto):** grants PATCH auto-promotes when `status → submitted` (best-effort, logs activity).
+- Shared upsert lives in `lib/kb-promote.ts` (`promoteFormToKb`) — new question inserts, existing
+  question refreshes its answer (idempotent). Heuristic categorizer maps section/question → KbCategory.
+- **Purpose tie:** `KnowledgeBaseEntry.purpose_id` (nullable) ties entries to a project. Promotion
+  sets it from the grant's purpose; manual KB create/edit has a Project dropdown; entries show a
+  violet purpose badge. `KbInput.purpose_id` (string→ObjectId in routes). Seed ties its KB to the
+  seeded purpose. Existing entries without the field read as null (safe).
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

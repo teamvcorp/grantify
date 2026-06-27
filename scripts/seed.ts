@@ -162,6 +162,7 @@ async function main() {
     await kbCol.insertMany([
       {
         org_id: orgId,
+        purpose_id: purposeId,
         question: 'What is your organization mission?',
         answer:
           'We expand access to hands-on STEM education for underserved youth.',
@@ -176,6 +177,7 @@ async function main() {
       },
       {
         org_id: orgId,
+        purpose_id: purposeId,
         question: 'How many people does your program serve annually?',
         answer: 'Approximately 500 middle-school students across 12 schools.',
         category: 'outcomes',

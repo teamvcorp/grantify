@@ -130,6 +130,8 @@ export interface GrantForm {
 export interface KnowledgeBaseEntry {
   _id?: ObjectId
   org_id: ObjectId
+  /** Ties the entry to a specific Purpose/project (null = org-wide / general). */
+  purpose_id: ObjectId | null
   question: string
   answer: string
   category: KbCategory

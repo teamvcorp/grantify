@@ -74,6 +74,8 @@ export const KbInput = z.object({
   answer: z.string().trim().min(1).max(10000),
   category: z.enum(KB_CATEGORIES).default('other'),
   tags: z.array(z.string().trim().min(1)).max(20).default([]),
+  // Optional Purpose/project tie. '' or null = org-wide.
+  purpose_id: z.string().nullable().optional(),
 })
 export type KbInput = z.infer<typeof KbInput>
 

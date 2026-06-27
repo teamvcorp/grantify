@@ -40,6 +40,13 @@ export async function PATCH(
   }
 
   const set: Record<string, unknown> = { ...parsed.data, updated_at: new Date() }
+  // Normalize the optional Purpose tie from string → ObjectId | null.
+  if (parsed.data.purpose_id !== undefined) {
+    set.purpose_id =
+      parsed.data.purpose_id && ObjectId.isValid(parsed.data.purpose_id)
+        ? new ObjectId(parsed.data.purpose_id)
+        : null
+  }
   // Keep embedding_text in sync when the text changes.
   if (parsed.data.question !== undefined || parsed.data.answer !== undefined) {
     const col = await knowledgeBase()

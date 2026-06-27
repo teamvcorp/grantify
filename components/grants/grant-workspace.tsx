@@ -21,6 +21,7 @@ import {
   Mail,
   CheckCircle2,
   AlertTriangle,
+  BookOpen,
 } from 'lucide-react'
 import { BudgetPanel } from '@/components/grants/budget-panel'
 import { ActivityPanel } from '@/components/grants/activity-panel'
@@ -66,6 +67,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   const [drafting, setDrafting] = useState(false)
   const [savingFields, setSavingFields] = useState(false)
   const [savingNarrative, setSavingNarrative] = useState(false)
+  const [promoting, setPromoting] = useState(false)
 
   const [narrative, setNarrative] = useState('')
   // Bumped after actions that write activity, to refresh the activity panel.
@@ -270,6 +272,22 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     }
   }
 
+  async function promoteKb() {
+    setPromoting(true)
+    setError(null)
+    try {
+      // Persist any unsaved edits first so we learn the latest answers.
+      await saveFields()
+      const res = await fetch(`/api/grants/${grantId}/promote-kb`, { method: 'POST' })
+      const data = await readApiJson<{ added: number; updated: number }>(res, 'Save to KB')
+      alert(`Knowledge base updated — ${data.added} new, ${data.updated} refreshed.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update the knowledge base.')
+    } finally {
+      setPromoting(false)
+    }
+  }
+
   async function saveNarrative() {
     setSavingNarrative(true)
     try {
@@ -418,10 +436,24 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
             </div>
           ))}
 
-          <Button onClick={saveFields} disabled={savingFields} variant="secondary">
-            {savingFields ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save answers
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={saveFields} disabled={savingFields} variant="secondary">
+              {savingFields ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save answers
+            </Button>
+            <Button onClick={promoteKb} disabled={promoting || savingFields} variant="outline">
+              {promoting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <BookOpen className="h-4 w-4" />
+              )}
+              Save answers to knowledge base
+            </Button>
+          </div>
 
           {/* Narrative */}
           <div className="space-y-3 border-t pt-6">

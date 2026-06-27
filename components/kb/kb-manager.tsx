@@ -25,6 +25,12 @@ interface Entry {
   category: string
   tags: string[]
   times_used: number
+  purpose_id: string | null
+}
+
+interface PurposeOption {
+  id: string
+  name: string
 }
 
 type FormState = {
@@ -32,18 +38,30 @@ type FormState = {
   answer: string
   category: string
   tags: string
+  purposeId: string
 }
 
-const EMPTY: FormState = { question: '', answer: '', category: 'other', tags: '' }
+const EMPTY: FormState = {
+  question: '',
+  answer: '',
+  category: 'other',
+  tags: '',
+  purposeId: '',
+}
 
 export function KbManager() {
   const [items, setItems] = useState<Entry[] | null>(null)
+  const [purposes, setPurposes] = useState<PurposeOption[]>([])
   const [listError, setListError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  // id → name for showing which project an entry belongs to.
+  const purposeName = (id: string | null) =>
+    id ? (purposes.find((p) => p.id === id)?.name ?? 'Project') : null
 
   async function load() {
     try {
@@ -59,6 +77,8 @@ export function KbManager() {
   useEffect(() => {
     void (async () => {
       await load()
+      const res = await fetch('/api/purposes')
+      if (res.ok) setPurposes((await res.json()).purposes)
     })()
   }, [])
 
@@ -75,6 +95,7 @@ export function KbManager() {
       answer: e.answer,
       category: e.category,
       tags: e.tags.join(', '),
+      purposeId: e.purpose_id ?? '',
     })
     setFormError(null)
     setOpen(true)
@@ -88,6 +109,7 @@ export function KbManager() {
       answer: form.answer.trim(),
       category: form.category,
       tags: form.tags.split(',').map((s) => s.trim()).filter(Boolean),
+      purpose_id: form.purposeId || null,
     }
     try {
       const res = await fetch(editingId ? `/api/kb/${editingId}` : '/api/kb', {
@@ -161,6 +183,9 @@ export function KbManager() {
                   <Badge color="emerald" className="capitalize">
                     {e.category}
                   </Badge>
+                  {purposeName(e.purpose_id) && (
+                    <Badge color="violet">{purposeName(e.purpose_id)}</Badge>
+                  )}
                   {e.tags.map((t) => (
                     <Badge key={t} color="zinc">
                       {t}
@@ -227,6 +252,21 @@ export function KbManager() {
                   placeholder="mission, overview"
                 />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="kb-purpose">Project (purpose)</Label>
+              <Select
+                id="kb-purpose"
+                value={form.purposeId}
+                onChange={(e) => setForm({ ...form, purposeId: e.target.value })}
+              >
+                <option value="">Org-wide (no specific project)</option>
+                {purposes.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
             </div>
             {formError && <p className="text-sm text-destructive">{formError}</p>}
           </div>
