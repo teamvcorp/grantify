@@ -243,9 +243,11 @@ there's no self-serve invite/reset flow yet.
 - Workspace **"Submission & deadlines"** card: editable LOI/full/report dates with "in N days / overdue"
   labels + "Where to submit" URL with an Open button.
 - Workspace **"What they fund"** card: editable funder-intent text (stored in `requirements_raw`) +
-  **"Summarize with AI"** → `POST /api/ai/funding-summary` (web search, thinking off, max_uses 2,
-  maxDuration 300, hardened). `requirements_raw` feeds BOTH generate-form and draft-narrative prompts
-  so wording aligns with funder intent. AI-discovered imports prefill it from the discovery summary.
+  **"Summarize with AI"** → `POST /api/ai/funding-summary`. It **reads the grant's own guidelines**
+  (federal → live `fetchGrantsGovOpportunity`; else stored `requirements_raw`/`notes`) and summarizes
+  in ONE fast Claude call — **no web search** (that hung/timed out). `maxDuration=60`; client has a
+  90s AbortController timeout. `requirements_raw` feeds generate-form + draft-narrative prompts so
+  wording aligns with funder intent. AI-discovered imports prefill it from the discovery summary.
 
 ## AI usage credits (done)
 

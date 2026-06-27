@@ -2,20 +2,21 @@ import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { getAnthropic, GRANT_OS_MODEL, WEB_SEARCH_TOOL, textFromMessage } from '@/lib/anthropic'
+import { getAnthropic, GRANT_OS_MODEL, textFromMessage } from '@/lib/anthropic'
 import { grants } from '@/lib/collections'
+import { fetchGrantsGovOpportunity } from '@/lib/grantsgov'
 import { hasCredits, chargeUsage } from '@/lib/credits'
 import { getActiveInstructions, instructionsBlock, PLAIN_TEXT_RULE } from '@/lib/org-ai'
 
 /**
  * POST /api/ai/funding-summary
- * Summarize what a funder actually funds (priorities, eligibility, what they
- * favor) via web search, so the team can align wording with the funder's intent.
- * Saves the summary to the grant's `requirements_raw` (which the AI form and
- * narrative also read). Thinking disabled + few searches to stay under the limit.
+ * Summarize what a funder funds by READING the grant's own guidelines — the
+ * live Grants.gov opportunity details for federal grants, otherwise the stored
+ * requirements/notes. No web search (that was slow and could hang); this is a
+ * single fast summarization. Saves to the grant's `requirements_raw`.
  */
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 60
 
 const BodySchema = z.object({ grant_id: z.string().min(1) })
 
@@ -49,28 +50,40 @@ export async function POST(req: Request) {
       )
     }
 
+    // Gather the grant's own guideline text. Federal grants have authoritative
+    // detail on Grants.gov — fetch it (one fast API call, not web search).
+    let sourceText = [grant.requirements_raw, grant.notes].filter(Boolean).join('\n\n').trim()
+    if (grant.grantsgov_id) {
+      try {
+        const opp = await fetchGrantsGovOpportunity(grant.grantsgov_id)
+        const detail = JSON.stringify(opp).slice(0, 12000)
+        sourceText = `${sourceText ? sourceText + '\n\n' : ''}GRANTS.GOV OPPORTUNITY DATA:\n${detail}`
+      } catch {
+        // Grants.gov hiccup — fall back to whatever we already have.
+      }
+    }
+
     const instructions = await getActiveInstructions(orgId)
-    const prompt = `Research this grant and summarize what the funder actually funds, so an applicant can align their proposal with the funder's intent.
+    const prompt = `Summarize what this funder funds, reading ONLY the grant guidelines provided below. Do not invent details; if something isn't present, omit it. If the guidelines are sparse, give a brief summary based on the funder name and type without fabricating specifics.
 ${instructionsBlock(instructions)}
 GRANT: ${grant.name}
 FUNDER: ${grant.funder} (${grant.funder_type})
-${grant.url ? `URL: ${grant.url}` : ''}
 
-Use web search to find the funder's stated priorities. Write a concise summary (no preamble) covering:
+Write a concise summary covering:
 - What they fund (focus areas, project types, populations served)
 - Who is eligible
 - What they favor / evaluation priorities, and any notable restrictions
 
-Keep it tight and factual — short paragraphs or simple "- " bullet points. Do not invent details; if something isn't found, omit it.
+${PLAIN_TEXT_RULE}
 
-${PLAIN_TEXT_RULE}`
+GRANT GUIDELINES:
+${sourceText || '(no detailed guidelines on file — summarize at a high level from the funder name/type)'}`
 
     const client = getAnthropic()
     const response = await client.messages.create({
       model: GRANT_OS_MODEL,
-      max_tokens: 2000,
+      max_tokens: 1500,
       thinking: { type: 'disabled' },
-      tools: [{ ...WEB_SEARCH_TOOL, max_uses: 2 }],
       messages: [{ role: 'user', content: prompt }],
     })
     await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)

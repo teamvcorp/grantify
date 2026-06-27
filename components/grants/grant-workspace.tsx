@@ -389,17 +389,28 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   async function summarizeFunding() {
     setSummarizing(true)
     setError(null)
+    // Hard client timeout so the spinner can never hang forever.
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 90_000)
     try {
       const res = await fetch('/api/ai/funding-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ grant_id: grantId }),
+        signal: controller.signal,
       })
       const data = await readApiJson<{ summary: string }>(res, 'Summarize')
       setFundingSummary(data.summary)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not summarize funding.')
+      setError(
+        controller.signal.aborted
+          ? 'Summarize timed out. Please try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not summarize funding.'
+      )
     } finally {
+      clearTimeout(timer)
       setSummarizing(false)
     }
   }
