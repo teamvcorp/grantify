@@ -287,6 +287,55 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     }
   }
 
+  const escHtml = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  // Open a print window with the org logo + grant header and the given body.
+  // Shared by the full-application export and the single-doc (narrative / LOI) prints.
+  function printDoc(docTitle: string, bodyHtml: string) {
+    if (!grant) return
+    const logoHtml =
+      logoUrl && logoUrl.startsWith('data:image/')
+        ? `<img class="logo" src="${logoUrl}" alt=""/>`
+        : ''
+    const subtitle = docTitle ? `<p class="muted">${escHtml(docTitle)}</p>` : ''
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(
+      grant.name
+    )}${docTitle ? ` — ${escHtml(docTitle)}` : ''}</title><style>
+      body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:32px auto;padding:0 16px;color:#111}
+      h1{font-size:20px} h2{font-size:15px;margin-top:24px;border-bottom:1px solid #ddd;padding-bottom:4px}
+      .field{margin:10px 0} .q{font-weight:600} .a{white-space:pre-wrap} .narr{white-space:pre-wrap}
+      .muted{color:#666} .logo{max-height:56px;max-width:220px;margin-bottom:16px}
+    </style></head><body>
+      ${logoHtml}
+      <h1>${escHtml(grant.name)}</h1>
+      <p class="muted">${escHtml(grant.funder)} · ${escHtml(grant.funder_type)}</p>
+      ${subtitle}
+      ${bodyHtml}
+    </body></html>`
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write(html)
+    w.document.close()
+    w.focus()
+    w.print()
+  }
+
+  // Print just the narrative — for review or mailing on its own.
+  function printNarrative() {
+    if (!narrative.trim()) return
+    printDoc('Narrative', `<div class="narr">${escHtml(narrative).replace(/\n/g, '<br/>')}</div>`)
+  }
+
+  // Print just the letter of intent.
+  function printLoi() {
+    if (!loi.trim()) return
+    printDoc(
+      'Letter of Intent',
+      `<div class="narr">${escHtml(loi).replace(/\n/g, '<br/>')}</div>`
+    )
+  }
+
   function exportPdf() {
     if (!form || !grant) return
     if (
@@ -297,8 +346,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     ) {
       return
     }
-    const esc = (s: string) =>
-      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const esc = escHtml
     const sections = form.sections
       .map((section) => {
         const rows = form.fields
@@ -324,29 +372,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           .map((d) => `<li>${esc(d.name)}</li>`)
           .join('')}</ul>`
       : ''
-    const logoHtml =
-      logoUrl && logoUrl.startsWith('data:image/')
-        ? `<img class="logo" src="${logoUrl}" alt=""/>`
-        : ''
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(
-      grant.name
-    )}</title><style>
-      body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:32px auto;padding:0 16px;color:#111}
-      h1{font-size:20px} h2{font-size:15px;margin-top:24px;border-bottom:1px solid #ddd;padding-bottom:4px}
-      .field{margin:10px 0} .q{font-weight:600} .a{white-space:pre-wrap} .narr{white-space:pre-wrap}
-      .muted{color:#666} .logo{max-height:56px;max-width:220px;margin-bottom:16px}
-    </style></head><body>
-      ${logoHtml}
-      <h1>${esc(grant.name)}</h1>
-      <p class="muted">${esc(grant.funder)} · ${esc(grant.funder_type)}</p>
-      ${loiHtml}${sections}${narr}${docsHtml}
-    </body></html>`
-    const w = window.open('', '_blank')
-    if (!w) return
-    w.document.write(html)
-    w.document.close()
-    w.focus()
-    w.print()
+    printDoc('', `${loiHtml}${sections}${narr}${docsHtml}`)
   }
 
   async function emailGrant() {
@@ -863,14 +889,20 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
               onChange={(e) => setNarrative(e.target.value)}
               placeholder="Click 'Draft narrative' to generate from your answers, or write here."
             />
-            <Button onClick={saveNarrative} disabled={savingNarrative} variant="secondary">
-              {savingNarrative ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Save narrative
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={saveNarrative} disabled={savingNarrative} variant="secondary">
+                {savingNarrative ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Save narrative
+              </Button>
+              <Button onClick={printNarrative} disabled={!narrative.trim()} variant="ghost">
+                <Printer className="h-4 w-4" />
+                Print narrative
+              </Button>
+            </div>
           </div>
 
           {/* Letter of intent */}
@@ -893,14 +925,20 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
             {loi && (
               <>
                 <Textarea rows={12} value={loi} onChange={(e) => setLoi(e.target.value)} />
-                <Button onClick={saveLoi} disabled={savingLoi} variant="secondary">
-                  {savingLoi ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="h-4 w-4" />
-                  )}
-                  Save letter
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={saveLoi} disabled={savingLoi} variant="secondary">
+                    {savingLoi ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    Save letter
+                  </Button>
+                  <Button onClick={printLoi} disabled={!loi.trim()} variant="ghost">
+                    <Printer className="h-4 w-4" />
+                    Print letter
+                  </Button>
+                </div>
               </>
             )}
           </div>
