@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { budgets, grantForms, grants } from '@/lib/collections'
+import { budgets, documents, grantForms, grants } from '@/lib/collections'
 import { emailConfigured, sendEmail } from '@/lib/email'
 import { renderGrantHtml } from '@/lib/grant-render'
 
@@ -61,12 +61,15 @@ export async function POST(
   const form = await formsCol.findOne({ grant_id: grantOid, org_id: orgId })
   const budgetsCol = await budgets()
   const budget = await budgetsCol.findOne({ grant_id: grantOid, org_id: orgId })
+  const docsCol = await documents()
+  const docs = await docsCol.find({ grant_id: grantOid, org_id: orgId }).toArray()
+  const docNames = docs.map((d) => d.name)
 
   try {
     await sendEmail({
       to,
       subject: `Grant application — ${grant.name}`,
-      html: renderGrantHtml(grant, form, budget),
+      html: renderGrantHtml(grant, form, budget, docNames),
       // Replies go to the sender, not the no-reply from-address.
       replyTo: session.user.email ?? undefined,
     })

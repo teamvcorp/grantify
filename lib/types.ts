@@ -125,6 +125,8 @@ export interface GrantForm {
   last_updated: Date
   narrative_draft: string
   narrative_generated_at: Date | null
+  /** AI-drafted Letter of Intent (short cover letter to the funder). */
+  loi_draft?: string
 }
 
 export interface KnowledgeBaseEntry {

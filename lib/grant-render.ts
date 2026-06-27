@@ -15,7 +15,19 @@ function esc(s: string): string {
  * Reused for emailing the grant (and a good base for a future PDF attachment).
  * Inline styles only, so it renders consistently in email clients.
  */
-export function renderGrantHtml(grant: Grant, form: GrantForm | null, budget: Budget | null): string {
+export function renderGrantHtml(
+  grant: Grant,
+  form: GrantForm | null,
+  budget: Budget | null,
+  docNames: string[] = []
+): string {
+  const H = (t: string) =>
+    `<h2 style="font-size:15px;margin-top:24px;border-bottom:1px solid #ddd;padding-bottom:4px">${t}</h2>`
+
+  const loi = form?.loi_draft
+    ? `${H('Letter of Intent')}<div style="white-space:pre-wrap">${esc(form.loi_draft)}</div>`
+    : ''
+
   const sections =
     form && form.fields.length
       ? form.sections
@@ -68,10 +80,17 @@ export function renderGrantHtml(grant: Grant, form: GrantForm | null, budget: Bu
       ${budget.notes ? `<p style="color:#444;white-space:pre-wrap">${esc(budget.notes)}</p>` : ''}`
   }
 
+  const documents =
+    docNames.length > 0
+      ? `${H('Supporting documents')}<p style="color:#666">Attached separately:</p><ul>${docNames
+          .map((n) => `<li>${esc(n)}</li>`)
+          .join('')}</ul>`
+      : ''
+
   return `<div style="font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:680px;margin:0 auto">
     <h1 style="font-size:20px;margin-bottom:4px">${esc(grant.name)}</h1>
     <p style="color:#666;margin-top:0">${esc(grant.funder)} · ${esc(grant.funder_type)}</p>
-    ${sections}${narrative}${budgetHtml}
+    ${loi}${sections}${narrative}${budgetHtml}${documents}
     <hr style="margin:32px 0;border:none;border-top:1px solid #eee"/>
     <p style="color:#999;font-size:12px">Sent from Grant OS.</p>
   </div>`

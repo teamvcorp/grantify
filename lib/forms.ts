@@ -22,6 +22,7 @@ export function formToClient(f: GrantForm) {
     narrative_generated_at: f.narrative_generated_at
       ? f.narrative_generated_at.toISOString()
       : null,
+    loi_draft: f.loi_draft ?? '',
     generated_at: f.generated_at ? f.generated_at.toISOString() : null,
   }
 }

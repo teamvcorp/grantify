@@ -78,11 +78,15 @@ export async function PATCH(
   if (parsed.data.narrative_draft !== undefined) {
     form.narrative_draft = parsed.data.narrative_draft
   }
+  if (parsed.data.loi_draft !== undefined) {
+    form.loi_draft = parsed.data.loi_draft
+  }
 
   await col.updateOne(scope.filter, {
     $set: {
       fields: form.fields,
       narrative_draft: form.narrative_draft,
+      loi_draft: form.loi_draft ?? '',
       completed_pct: completedPct(form.fields),
       last_updated: new Date(),
     },

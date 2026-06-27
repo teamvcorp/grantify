@@ -140,7 +140,7 @@ All string values (question, help_text, options) must be plain text — no Markd
         last_updated: now,
         completed_pct: completedPct(fields),
       },
-      $setOnInsert: { narrative_draft: '', narrative_generated_at: null },
+      $setOnInsert: { narrative_draft: '', narrative_generated_at: null, loi_draft: '' },
     },
     { upsert: true }
   )

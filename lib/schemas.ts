@@ -148,4 +148,5 @@ export const FormPatch = z.object({
     .max(500)
     .optional(),
   narrative_draft: z.string().max(100000).optional(),
+  loi_draft: z.string().max(50000).optional(),
 })

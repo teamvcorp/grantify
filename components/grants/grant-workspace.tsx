@@ -61,6 +61,7 @@ interface Form {
   sections: string[]
   completed_pct: number
   narrative_draft: string
+  loi_draft?: string
 }
 
 const SOURCE_LABEL: Record<string, string> = { ai: 'AI', kb: 'KB', team: 'edited', empty: '' }
@@ -93,6 +94,9 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
 
   const [narrative, setNarrative] = useState('')
   const [narrativeIncomplete, setNarrativeIncomplete] = useState(false)
+  const [loi, setLoi] = useState('')
+  const [generatingLoi, setGeneratingLoi] = useState(false)
+  const [savingLoi, setSavingLoi] = useState(false)
   // Bumped after actions that write activity, to refresh the activity panel.
   const [activityKey, setActivityKey] = useState(0)
   const bumpActivity = () => setActivityKey((k) => k + 1)
@@ -120,6 +124,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
       const data = await res.json()
       setForm(data.form)
       setNarrative(data.form?.narrative_draft ?? '')
+      setLoi(data.form?.loi_draft ?? '')
     }
   }, [grantId])
 
@@ -152,6 +157,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           const data = await f.json()
           setForm(data.form)
           setNarrative(data.form?.narrative_draft ?? '')
+          setLoi(data.form?.loi_draft ?? '')
         }
         await loadDocs()
       } catch (err) {
@@ -299,8 +305,16 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
         return `<h2>${esc(section)}</h2>${rows}`
       })
       .join('')
+    const loiHtml = loi
+      ? `<h2>Letter of Intent</h2><div class="narr">${esc(loi).replace(/\n/g, '<br/>')}</div>`
+      : ''
     const narr = narrative
       ? `<h2>Narrative</h2><div class="narr">${esc(narrative).replace(/\n/g, '<br/>')}</div>`
+      : ''
+    const docsHtml = grantDocs.length
+      ? `<h2>Supporting documents</h2><p class="muted">Attached separately:</p><ul>${grantDocs
+          .map((d) => `<li>${esc(d.name)}</li>`)
+          .join('')}</ul>`
       : ''
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(
       grant.name
@@ -312,7 +326,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     </style></head><body>
       <h1>${esc(grant.name)}</h1>
       <p class="muted">${esc(grant.funder)} · ${esc(grant.funder_type)}</p>
-      ${sections}${narr}
+      ${loiHtml}${sections}${narr}${docsHtml}
     </body></html>`
     const w = window.open('', '_blank')
     if (!w) return
@@ -461,6 +475,47 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
       })
     } finally {
       setSavingNarrative(false)
+    }
+  }
+
+  async function generateLoi() {
+    setGeneratingLoi(true)
+    setError(null)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 90_000)
+    try {
+      const res = await fetch('/api/ai/draft-loi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grant_id: grantId }),
+        signal: controller.signal,
+      })
+      const data = await readApiJson<{ loi: string }>(res, 'Letter of intent')
+      setLoi(data.loi)
+    } catch (err) {
+      setError(
+        controller.signal.aborted
+          ? 'Letter of intent timed out. Please try again.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not draft the letter of intent.'
+      )
+    } finally {
+      clearTimeout(timer)
+      setGeneratingLoi(false)
+    }
+  }
+
+  async function saveLoi() {
+    setSavingLoi(true)
+    try {
+      await fetch(`/api/grants/${grantId}/form`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loi_draft: loi }),
+      })
+    } finally {
+      setSavingLoi(false)
     }
   }
 
@@ -803,6 +858,38 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
               )}
               Save narrative
             </Button>
+          </div>
+
+          {/* Letter of intent */}
+          <div className="space-y-3 border-t pt-6">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">Letter of intent</h2>
+              <p className="text-sm text-muted-foreground">
+                A short cover letter to the funder, drafted from your answers. Fill in the bracketed
+                placeholders (date, contact) before sending.
+              </p>
+            </div>
+            <Button onClick={generateLoi} disabled={generatingLoi}>
+              {generatingLoi ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4" />
+              )}
+              {loi ? 'Regenerate letter' : 'Generate letter of intent'}
+            </Button>
+            {loi && (
+              <>
+                <Textarea rows={12} value={loi} onChange={(e) => setLoi(e.target.value)} />
+                <Button onClick={saveLoi} disabled={savingLoi} variant="secondary">
+                  {savingLoi ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  Save letter
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
