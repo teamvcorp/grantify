@@ -31,6 +31,11 @@ export function priceIdFor(plan: Plan): string | undefined {
   return undefined
 }
 
+/** Stripe Price id for an AI-credit top-up (TOKEN_REUP_PLAN, $5 each). */
+export function tokenReupPriceId(): string | undefined {
+  return process.env.TOKEN_REUP_PLAN
+}
+
 /** Reverse map: a Stripe Price id back to our plan (null if it doesn't match). */
 export function planFromPriceId(priceId: string | null | undefined): Plan | null {
   if (!priceId) return null

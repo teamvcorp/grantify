@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { getAnthropic, GRANT_OS_MODEL, WEB_SEARCH_TOOL, textFromMessage } from '@/lib/anthropic'
 import { grants } from '@/lib/collections'
+import { hasCredits, chargeUsage } from '@/lib/credits'
 
 /**
  * POST /api/ai/funding-summary
@@ -40,6 +41,13 @@ export async function POST(req: Request) {
     const grant = await grantsCol.findOne({ _id: grantId, org_id: orgId })
     if (!grant) return NextResponse.json({ error: 'Grant not found.' }, { status: 404 })
 
+    if (!(await hasCredits(orgId))) {
+      return NextResponse.json(
+        { error: 'Out of AI credits. Add credits from the dashboard to continue.' },
+        { status: 402 }
+      )
+    }
+
     const prompt = `Research this grant and summarize what the funder actually funds, so an applicant can align their proposal with the funder's intent.
 
 GRANT: ${grant.name}
@@ -61,6 +69,7 @@ Keep it tight and factual — short paragraphs or bullet points. Do not invent d
       tools: [{ ...WEB_SEARCH_TOOL, max_uses: 2 }],
       messages: [{ role: 'user', content: prompt }],
     })
+    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
 
     const summary = textFromMessage(response).trim()
     await grantsCol.updateOne(

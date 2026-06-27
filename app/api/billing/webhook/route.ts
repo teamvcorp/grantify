@@ -3,6 +3,7 @@ import { ObjectId } from 'mongodb'
 import type Stripe from 'stripe'
 import { orgs } from '@/lib/collections'
 import { getStripe, planFromPriceId } from '@/lib/stripe'
+import { addCredits, CREDIT_PER_REUP_CENTS } from '@/lib/credits'
 import type { Plan } from '@/lib/types'
 
 /**
@@ -34,18 +35,25 @@ export async function POST(req: Request) {
   if (event.type === 'checkout.session.completed') {
     const s = event.data.object as Stripe.Checkout.Session
     const orgId = s.metadata?.org_id
-    const plan = (s.metadata?.plan as Plan | undefined) ?? 'pro'
     if (orgId && ObjectId.isValid(orgId)) {
-      await col.updateOne(
-        { _id: new ObjectId(orgId) },
-        {
-          $set: {
-            plan,
-            stripe_customer_id: (s.customer as string) ?? null,
-            stripe_subscription_id: (s.subscription as string) ?? null,
-          },
-        }
-      )
+      if (s.metadata?.type === 'credits') {
+        // One-time AI credit top-up: add units × $5 of credit.
+        const units = Number(s.metadata?.units) || 1
+        await addCredits(new ObjectId(orgId), units * CREDIT_PER_REUP_CENTS)
+      } else {
+        // Subscription checkout: set the org's plan.
+        const plan = (s.metadata?.plan as Plan | undefined) ?? 'pro'
+        await col.updateOne(
+          { _id: new ObjectId(orgId) },
+          {
+            $set: {
+              plan,
+              stripe_customer_id: (s.customer as string) ?? null,
+              stripe_subscription_id: (s.subscription as string) ?? null,
+            },
+          }
+        )
+      }
     }
   } else if (event.type === 'customer.subscription.updated') {
     // Plan change / renewal / cancel-at-period-end → resync the org's plan.

@@ -11,6 +11,7 @@ import {
 } from '@/lib/anthropic'
 import { grants, grantForms } from '@/lib/collections'
 import { completedPct, formToClient } from '@/lib/forms'
+import { hasCredits, chargeUsage } from '@/lib/credits'
 import { logActivity } from '@/lib/activity'
 import type { GrantFormField } from '@/lib/types'
 
@@ -84,6 +85,13 @@ Return ONLY a JSON array (no prose, no markdown fences) of field objects with EX
 }]
 Aim for the real fields this funder type expects (org info, project narrative, goals/outcomes, budget, etc.). 8–25 fields is typical.`
 
+  if (!(await hasCredits(orgId))) {
+    return NextResponse.json(
+      { error: 'Out of AI credits. Add credits from the dashboard to continue.' },
+      { status: 402 }
+    )
+  }
+
   let genFields: z.infer<typeof GenFields>
   try {
     const client = getAnthropic()
@@ -93,6 +101,7 @@ Aim for the real fields this funder type expects (org info, project narrative, g
       thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: prompt }],
     })
+    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
     genFields = GenFields.parse(parseJsonFromText(textFromMessage(response)))
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Form generation failed.'

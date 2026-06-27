@@ -1,8 +1,11 @@
 import { ObjectId } from 'mongodb'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DollarSign, FileText, CalendarClock, Award } from 'lucide-react'
+import { DollarSign, FileText, CalendarClock, Award, Coins } from 'lucide-react'
 import { auth } from '@/lib/auth'
 import { grants } from '@/lib/collections'
+import { getCreditCents } from '@/lib/credits'
+import { billingConfigured } from '@/lib/stripe'
+import { BuyCredits } from '@/components/dashboard/buy-credits'
 import type { Grant } from '@/lib/types'
 
 /**
@@ -28,10 +31,13 @@ export default async function DashboardPage() {
     return <p className="text-sm text-destructive">Not authenticated.</p>
   }
 
+  const orgId = new ObjectId(session.user.org_id)
   const col = await grants()
-  const docs = (await col
-    .find({ org_id: new ObjectId(session.user.org_id) })
-    .toArray()) as Grant[]
+  const docs = (await col.find({ org_id: orgId }).toArray()) as Grant[]
+
+  const creditCents = await getCreditCents(orgId)
+  const isAdmin = session.user.role === 'admin'
+  const billingReady = billingConfigured()
 
   const now = new Date()
   const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
@@ -80,6 +86,39 @@ export default async function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* AI credits */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Coins className="h-4 w-4 text-primary" /> AI credits
+          </CardTitle>
+          <span
+            className={`text-2xl font-semibold tabular-nums ${
+              creditCents <= 0 ? 'text-destructive' : ''
+            }`}
+          >
+            ${(creditCents / 100).toFixed(2)}
+          </span>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            AI features (discovery, form generation, KB matching, narrative drafting) draw down
+            this balance. {creditCents <= 0 && 'You’re out — top up to keep using AI.'}
+          </p>
+          {isAdmin ? (
+            billingReady ? (
+              <BuyCredits />
+            ) : (
+              <p className="text-muted-foreground">
+                Set <code>TOKEN_REUP_PLAN</code> + Stripe keys to enable credit purchases.
+              </p>
+            )
+          ) : (
+            <p className="text-muted-foreground">Ask an admin to add more credits.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -10,6 +10,7 @@ import {
 } from '@/lib/anthropic'
 import { grantForms, knowledgeBase } from '@/lib/collections'
 import { completedPct, formToClient } from '@/lib/forms'
+import { hasCredits, chargeUsage } from '@/lib/credits'
 
 /**
  * POST /api/ai/match-kb
@@ -75,6 +76,13 @@ Return ONLY a JSON array (no prose, no fences) with one object per field:
 [{ "field_id": string, "kb_id": string | null, "answer": string }]
 The answer should adapt the knowledge base content to the field's question; keep it concise and factual.`
 
+  if (!(await hasCredits(orgId))) {
+    return NextResponse.json(
+      { error: 'Out of AI credits. Add credits from the dashboard to continue.' },
+      { status: 402 }
+    )
+  }
+
   let matches: z.infer<typeof Matches>
   try {
     const client = getAnthropic()
@@ -84,6 +92,7 @@ The answer should adapt the knowledge base content to the field's question; keep
       thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: prompt }],
     })
+    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
     matches = Matches.parse(parseJsonFromText(textFromMessage(response)))
   } catch (err) {
     const message = err instanceof Error ? err.message : 'KB matching failed.'

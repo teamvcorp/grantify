@@ -10,6 +10,7 @@ import {
   parseJsonFromText,
 } from '@/lib/anthropic'
 import { purposes } from '@/lib/collections'
+import { hasCredits, chargeUsage } from '@/lib/credits'
 
 /**
  * POST /api/ai/discover
@@ -106,13 +107,22 @@ export async function POST(req: Request) {
     }
 
     // 3. Load the Purpose — ORG-SCOPED (never by id alone).
+    const orgId = new ObjectId(session.user.org_id)
     const purposesCol = await purposes()
     const purpose = await purposesCol.findOne({
       _id: new ObjectId(parsed.data.purpose_id),
-      org_id: new ObjectId(session.user.org_id),
+      org_id: orgId,
     })
     if (!purpose) {
       return NextResponse.json({ error: 'Purpose not found.' }, { status: 404 })
+    }
+
+    // Credit gate.
+    if (!(await hasCredits(orgId))) {
+      return NextResponse.json(
+        { error: 'Out of AI credits. Add credits from the dashboard to continue.' },
+        { status: 402 }
+      )
     }
 
     // 4. Ask Claude, resuming across any server-tool pauses.
@@ -132,6 +142,7 @@ export async function POST(req: Request) {
       tools,
       messages,
     })
+    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
 
     // Server-side tool loop can yield stop_reason: "pause_turn"; resume by
     // re-sending the assistant turn until it finishes (bounded for safety).
@@ -141,12 +152,11 @@ export async function POST(req: Request) {
       response = await client.messages.create({
         model: GRANT_OS_MODEL,
         max_tokens: 8000,
-        // Thinking is disabled here: on top of web search it pushed the call past
-      // the 60s function limit. Web search alone is what makes discovery useful.
-      thinking: { type: 'disabled' },
+        thinking: { type: 'disabled' },
         tools,
         messages,
       })
+      await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
     }
 
     const text = textFromMessage(response)

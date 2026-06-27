@@ -168,6 +168,10 @@ export interface Org {
   stripe_customer_id: string | null
   stripe_subscription_id: string | null
   plan_expires_at: Date | null
+  /** AI usage credit balance, in cents (billed at 2× raw Anthropic cost). */
+  ai_credits_cents?: number
+  /** Lifetime AI spend, in cents (for display). */
+  ai_spent_cents?: number
   created_at: Date
 }
 

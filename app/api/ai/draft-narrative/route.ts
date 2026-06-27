@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { getAnthropic, GRANT_OS_MODEL } from '@/lib/anthropic'
 import { grants, grantForms } from '@/lib/collections'
 import { logActivity } from '@/lib/activity'
+import { hasCredits, chargeUsage } from '@/lib/credits'
 
 /**
  * POST /api/ai/draft-narrative
@@ -48,6 +49,12 @@ export async function POST(req: Request) {
     return new Response('Fill in some answers (e.g. via KB matching) first.', { status: 400 })
   }
 
+  if (!(await hasCredits(orgId))) {
+    return new Response('Out of AI credits. Add credits from the dashboard to continue.', {
+      status: 402,
+    })
+  }
+
   const prompt = `Write a compelling, well-structured grant narrative for the application below. Use ONLY the information in the answered fields — do not invent facts, figures, or outcomes. Write in clear, professional prose with short section headings. Aim for a cohesive narrative a reviewer would find persuasive.
 
 GRANT: ${grant.name} — ${grant.funder} (${grant.funder_type})
@@ -81,6 +88,9 @@ Write the narrative now.`
             controller.enqueue(encoder.encode(event.delta.text))
           }
         }
+        // Bill usage once the stream completes.
+        const finalMsg = await aiStream.finalMessage()
+        await chargeUsage(orgId, GRANT_OS_MODEL, finalMsg.usage)
       } catch (err) {
         controller.error(err)
         return

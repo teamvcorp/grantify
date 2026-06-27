@@ -242,6 +242,23 @@ there's no self-serve invite/reset flow yet.
   maxDuration 300, hardened). `requirements_raw` feeds BOTH generate-form and draft-narrative prompts
   so wording aligns with funder intent. AI-discovered imports prefill it from the discovery summary.
 
+## AI usage credits (done)
+
+- `lib/credits.ts` — bills **2× the raw Anthropic cost** of each call against an org credit
+  balance (`Org.ai_credits_cents`, cents). Pricing per-token: sonnet-4-6 $3/$15, opus-4-8 $5/$25,
+  haiku $1/$5 per 1M; web search ~$0.01/req; cache read 0.1× / write 1.25×. `billedCents`,
+  `getCreditCents` (backfills `STARTER_CREDITS_CENTS`=$5 for legacy orgs), `hasCredits`,
+  `chargeUsage`, `addCredits`. `CREDIT_PER_REUP_CENTS`=$5.
+- Every AI route gates on `hasCredits` (402 when empty) and calls `chargeUsage(orgId, model,
+  response.usage)` after each Claude call — discover (per pause_turn iteration), generate-form,
+  match-kb, draft-narrative (from `aiStream.finalMessage()`), funding-summary.
+- Top-up: `POST /api/billing/credits` (admin, Stripe one-time payment, `TOKEN_REUP_PLAN`, qty 1–50);
+  webhook branches on `metadata.type==='credits'` → `addCredits(units × $5)`. Subscription checkout
+  unchanged (branch on metadata).
+- Dashboard "AI credits" card shows balance + admin BuyCredits (units × $5 → Stripe).
+- `TOKEN_REUP_PLAN` in `.env.local` (set) + `.env.example`. Admin org funded to $100 for testing.
+- Web search per-request cost is an ESTIMATE — tune `WEB_SEARCH_PER_REQUEST` in `lib/credits.ts`.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email
