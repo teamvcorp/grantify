@@ -111,7 +111,12 @@ Purpose + 2 grants + 2 KB entries only if the org has no purposes yet. Needs `ts
   - `POST /api/ai/match-kb` — one Claude call maps fields → best KB entry + drafts answers; sets
     `source:'kb'` + `kb_match_id`, bumps KB `times_used`.
   - `POST /api/ai/draft-narrative` — STREAMING (ReadableStream of text deltas, `thinking:disabled`),
-    saves `narrative_draft` on completion. Client reads `res.body` reader.
+    saves `narrative_draft` on completion. Client reads `res.body` reader. `maxDuration=300`.
+    Emits `STREAM_DONE` (lib/ui.ts) sentinel on clean finish; accepts `continue_from` to resume a
+    cut-off draft (saved = `continue_from + continuation`). Client detects a missing sentinel as a
+    timeout → shows a "Narrative didn't finish" banner with **Finish** (`draft(narrative)`) /
+    **Restart** (`draft()`). The top "Draft narrative" button must call `() => draft()` (draft takes
+    an optional `continueFrom`).
 - `GET`/`PATCH /api/grants/[id]/form` (FormPatch: answers[] + narrative_draft) and `GET /api/grants/[id]`.
 - Grant workspace: `components/grants/grant-workspace.tsx` at `/grants/[id]` (generate/match/draft +
   editable fields by section + completion % + narrative editor). Pipeline grant names link here.

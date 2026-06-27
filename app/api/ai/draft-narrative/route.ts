@@ -11,6 +11,7 @@ import {
   instructionsBlock,
   PLAIN_TEXT_RULE,
 } from '@/lib/org-ai'
+import { STREAM_DONE } from '@/lib/ui'
 
 /**
  * POST /api/ai/draft-narrative
@@ -19,9 +20,15 @@ import {
  * full draft is saved to the GrantForm when the stream completes.
  */
 export const runtime = 'nodejs'
-export const maxDuration = 120
+// As much headroom as the plan allows (Pro 300s; Hobby clamps to 60s). Long
+// drafts can still hit the ceiling — the client offers Finish/Restart then.
+export const maxDuration = 300
 
-const BodySchema = z.object({ grant_id: z.string().min(1) })
+const BodySchema = z.object({
+  grant_id: z.string().min(1),
+  // When present, continue an existing (cut-off) draft instead of starting fresh.
+  continue_from: z.string().max(100000).optional(),
+})
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -61,12 +68,10 @@ export async function POST(req: Request) {
     })
   }
 
+  const continueFrom = parsed.data.continue_from?.trim()
   const instructions = await getActiveInstructions(orgId)
   const company = await getCompanyContext(orgId)
-  const prompt = `Write a compelling, well-structured grant narrative for the application below. Clean up and tighten each answered section as you weave it in, but use ONLY the information in the answered fields and the organization info — do not invent facts, figures, or outcomes. Write in clear, professional prose with short section headings.
-
-${PLAIN_TEXT_RULE}
-${instructionsBlock(instructions)}
+  const context = `${instructionsBlock(instructions)}
 GRANT: ${grant.name} — ${grant.funder} (${grant.funder_type})
 ${
   grant.requirements_raw
@@ -78,7 +83,22 @@ ${
       : ''
   }
 ANSWERED FIELDS:
-${answered.map((f) => `## ${f.question}\n${f.answer}`).join('\n\n')}
+${answered.map((f) => `## ${f.question}\n${f.answer}`).join('\n\n')}`
+
+  const prompt = continueFrom
+    ? `A grant narrative was cut off mid-generation. Continue it seamlessly from exactly where it stops — do NOT repeat earlier text, do NOT restart, do NOT add a preface. Output only the continuation.
+
+${PLAIN_TEXT_RULE}
+${context}
+
+NARRATIVE SO FAR (continue from the end of this; do not repeat any of it):
+${continueFrom}
+
+Continue the narrative now.`
+    : `Write a compelling, well-structured grant narrative for the application below. Clean up and tighten each answered section as you weave it in, but use ONLY the information in the answered fields and the organization info — do not invent facts, figures, or outcomes. Write in clear, professional prose with short section headings.
+
+${PLAIN_TEXT_RULE}
+${context}
 
 Write the narrative now.`
 
@@ -105,18 +125,22 @@ Write the narrative now.`
         // Bill usage once the stream completes.
         const finalMsg = await aiStream.finalMessage()
         await chargeUsage(orgId, GRANT_OS_MODEL, finalMsg.usage)
+        // Signal a clean finish so the client can distinguish complete from cut-off.
+        controller.enqueue(encoder.encode(STREAM_DONE))
       } catch (err) {
         controller.error(err)
         return
       }
 
-      // Persist the completed draft (best-effort) and log it.
+      // Persist the completed draft (best-effort) and log it. When continuing,
+      // the saved draft is the prior text plus this continuation.
+      const fullDraft = (continueFrom ? `${continueFrom} ` : '') + full
       try {
         await formsCol.updateOne(
           { grant_id: grantId, org_id: orgId },
           {
             $set: {
-              narrative_draft: full,
+              narrative_draft: fullDraft,
               narrative_generated_at: new Date(),
               last_updated: new Date(),
             },

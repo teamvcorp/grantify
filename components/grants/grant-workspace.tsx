@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/catalyst/badge'
 import { Select } from '@/components/catalyst/select'
 import { Progress } from '@/components/ui/progress'
-import { sourceColor, readApiJson } from '@/lib/ui'
+import { sourceColor, readApiJson, STREAM_DONE } from '@/lib/ui'
 import {
   Sparkles,
   Wand2,
@@ -92,6 +92,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   const [polishingId, setPolishingId] = useState<string | null>(null)
 
   const [narrative, setNarrative] = useState('')
+  const [narrativeIncomplete, setNarrativeIncomplete] = useState(false)
   // Bumped after actions that write activity, to refresh the activity panel.
   const [activityKey, setActivityKey] = useState(0)
   const bumpActivity = () => setActivityKey((k) => k + 1)
@@ -226,27 +227,45 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     }
   }
 
-  async function draft() {
+  async function draft(continueFrom?: string) {
     setDrafting(true)
     setError(null)
-    setNarrative('')
+    setNarrativeIncomplete(false)
+    if (!continueFrom) setNarrative('')
     try {
       const res = await fetch('/api/ai/draft-narrative', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grant_id: grantId }),
+        body: JSON.stringify(
+          continueFrom ? { grant_id: grantId, continue_from: continueFrom } : { grant_id: grantId }
+        ),
       })
       if (!res.ok || !res.body) {
         throw new Error((await res.text()) || 'Draft failed.')
       }
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
+      let acc = continueFrom ? `${continueFrom} ` : ''
+      let complete = false
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
-        setNarrative((prev) => prev + decoder.decode(value, { stream: true }))
+        acc += decoder.decode(value, { stream: true })
+        if (acc.includes(STREAM_DONE)) {
+          complete = true
+          acc = acc.replace(STREAM_DONE, '')
+        }
+        setNarrative(acc)
+      }
+      // Ended without the completion marker → the stream was cut off.
+      if (!complete) {
+        setNarrativeIncomplete(true)
+        setError(
+          'The narrative was cut off before finishing (the request likely timed out). Finish it or restart below.'
+        )
       }
     } catch (err) {
+      setNarrativeIncomplete(true)
       setError(err instanceof Error ? err.message : 'Draft failed.')
     } finally {
       setDrafting(false)
@@ -572,7 +591,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           {matching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
           Match knowledge base
         </Button>
-        <Button variant="outline" onClick={draft} disabled={!form || drafting}>
+        <Button variant="outline" onClick={() => draft()} disabled={!form || drafting}>
           {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
           Draft narrative
         </Button>
@@ -733,6 +752,32 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           {/* Narrative */}
           <div className="space-y-3 border-t pt-6">
             <h2 className="text-lg font-semibold tracking-tight">Narrative draft</h2>
+
+            {narrativeIncomplete && (
+              <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-400/10 px-3 py-2 text-sm">
+                <p className="font-medium text-amber-700 dark:text-amber-400">
+                  Narrative didn’t finish
+                </p>
+                <p className="text-muted-foreground">
+                  It stopped before completing — usually a timeout on long drafts. Your partial
+                  draft is kept below. Finish it from where it stopped, or restart from scratch.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => draft(narrative)} disabled={drafting}>
+                    {drafting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
+                    )}
+                    Finish narrative
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => draft()} disabled={drafting}>
+                    Restart
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <Textarea
               rows={14}
               value={narrative}
