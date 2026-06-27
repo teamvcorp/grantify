@@ -85,7 +85,8 @@ Return ONLY a JSON array (no prose, no markdown fences) of field objects with EX
   "char_limit": number | null,
   "help_text": string            // short guidance, may be ""
 }]
-Aim for the real fields this funder type expects (org info, project narrative, goals/outcomes, budget, etc.). 8–25 fields is typical.`
+Aim for the real fields this funder type expects (org info, project narrative, goals/outcomes, budget, etc.). 8–25 fields is typical.
+All string values (question, help_text, options) must be plain text — no Markdown, asterisks (**), or backticks.`
 
   if (!(await hasCredits(orgId))) {
     return NextResponse.json(

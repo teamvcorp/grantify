@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { getAnthropic, GRANT_OS_MODEL, WEB_SEARCH_TOOL, textFromMessage } from '@/lib/anthropic'
 import { grants } from '@/lib/collections'
 import { hasCredits, chargeUsage } from '@/lib/credits'
-import { getActiveInstructions, instructionsBlock } from '@/lib/org-ai'
+import { getActiveInstructions, instructionsBlock, PLAIN_TEXT_RULE } from '@/lib/org-ai'
 
 /**
  * POST /api/ai/funding-summary
@@ -61,7 +61,9 @@ Use web search to find the funder's stated priorities. Write a concise summary (
 - Who is eligible
 - What they favor / evaluation priorities, and any notable restrictions
 
-Keep it tight and factual — short paragraphs or bullet points. Do not invent details; if something isn't found, omit it.`
+Keep it tight and factual — short paragraphs or simple "- " bullet points. Do not invent details; if something isn't found, omit it.
+
+${PLAIN_TEXT_RULE}`
 
     const client = getAnthropic()
     const response = await client.messages.create({

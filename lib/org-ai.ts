@@ -28,3 +28,10 @@ export function instructionsBlock(instructions: string): string {
     ? `\nORGANIZATION INSTRUCTIONS (follow these closely — they define the voice, strategy, and how to position this organization):\n${instructions}\n`
     : ''
 }
+
+/**
+ * Outputs are shown in plain-text surfaces (PDF export, email, form fields), so
+ * Markdown emphasis renders as literal characters. Forbid it.
+ */
+export const PLAIN_TEXT_RULE =
+  'Write in plain text only. Do NOT use Markdown: no ** or __ for bold, no * or _ for italics, no # headings, no backticks or bullet asterisks. For headings, use a plain capitalized line; for lists, use "- " or numbers. Never wrap words in asterisks for emphasis.'

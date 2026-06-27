@@ -6,7 +6,12 @@ import { getAnthropic, GRANT_OS_MODEL, textFromMessage } from '@/lib/anthropic'
 import { grants, grantForms } from '@/lib/collections'
 import { completedPct, formToClient } from '@/lib/forms'
 import { hasCredits, chargeUsage } from '@/lib/credits'
-import { getActiveInstructions, getCompanyContext, instructionsBlock } from '@/lib/org-ai'
+import {
+  getActiveInstructions,
+  getCompanyContext,
+  instructionsBlock,
+  PLAIN_TEXT_RULE,
+} from '@/lib/org-ai'
 
 /**
  * POST /api/ai/polish-field — clean up one user-written field answer using the
@@ -61,7 +66,9 @@ export async function POST(req: Request) {
 
     const instructions = await getActiveInstructions(orgId)
     const company = await getCompanyContext(orgId)
-    const prompt = `Clean up and strengthen this grant application answer. Improve clarity, tone, and persuasiveness, and align it to the funder — but stay strictly truthful: use only the facts in the current answer and the organization info below. Do NOT invent facts, figures, names, or outcomes. Return ONLY the rewritten answer text — no preamble, no quotes, no markdown.
+    const prompt = `Clean up and strengthen this grant application answer. Improve clarity, tone, and persuasiveness, and align it to the funder — but stay strictly truthful: use only the facts in the current answer and the organization info below. Do NOT invent facts, figures, names, or outcomes. Return ONLY the rewritten answer text — no preamble, no quotes.
+
+${PLAIN_TEXT_RULE}
 ${instructionsBlock(instructions)}
 GRANT: ${grant.name} — ${grant.funder} (${grant.funder_type})
 ${grant.requirements_raw ? `\nWHAT THE FUNDER FUNDS:\n${grant.requirements_raw}\n` : ''}${

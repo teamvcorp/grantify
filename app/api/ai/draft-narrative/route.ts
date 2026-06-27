@@ -5,7 +5,12 @@ import { getAnthropic, GRANT_OS_MODEL } from '@/lib/anthropic'
 import { grants, grantForms } from '@/lib/collections'
 import { logActivity } from '@/lib/activity'
 import { hasCredits, chargeUsage } from '@/lib/credits'
-import { getActiveInstructions, getCompanyContext, instructionsBlock } from '@/lib/org-ai'
+import {
+  getActiveInstructions,
+  getCompanyContext,
+  instructionsBlock,
+  PLAIN_TEXT_RULE,
+} from '@/lib/org-ai'
 
 /**
  * POST /api/ai/draft-narrative
@@ -59,6 +64,8 @@ export async function POST(req: Request) {
   const instructions = await getActiveInstructions(orgId)
   const company = await getCompanyContext(orgId)
   const prompt = `Write a compelling, well-structured grant narrative for the application below. Clean up and tighten each answered section as you weave it in, but use ONLY the information in the answered fields and the organization info — do not invent facts, figures, or outcomes. Write in clear, professional prose with short section headings.
+
+${PLAIN_TEXT_RULE}
 ${instructionsBlock(instructions)}
 GRANT: ${grant.name} — ${grant.funder} (${grant.funder_type})
 ${

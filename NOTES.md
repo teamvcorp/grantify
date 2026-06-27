@@ -271,6 +271,11 @@ there's no self-serve invite/reset flow yet.
   instructions + company info + funder context, truthfully (no invented facts); saves it
   (`source: 'team'`), credit-gated + charged. Per-field **Polish** button on text/textarea fields
   in the workspace (saves first, then polishes, then `setForm`).
+- Every AI op is scoped to the actively-worked `grant_id` and includes that grant's funder intent
+  (`requirements_raw`) + funder — so the org instruction always applies *with that grant's intent*.
+- `PLAIN_TEXT_RULE` (org-ai.ts) is appended to the prose prompts (summary/narrative/polish + a note
+  on generate-form) so outputs are plain text — no `**`/Markdown that would render literally in
+  PDF/email/form surfaces.
 
 ## Status — what's next (still deferred)
 
