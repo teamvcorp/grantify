@@ -342,6 +342,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
                         url: r.url,
                         focus_areas: r.focus_areas,
                         notes: r.summary,
+                        requirements_raw: r.summary,
                         discovered_by: 'ai',
                       })
                     }

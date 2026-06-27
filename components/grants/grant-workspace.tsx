@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   BookOpen,
+  ExternalLink,
 } from 'lucide-react'
 import { BudgetPanel } from '@/components/grants/budget-panel'
 import { ActivityPanel } from '@/components/grants/activity-panel'
@@ -32,6 +33,14 @@ interface Grant {
   name: string
   funder: string
   funder_type: string
+  amount_min: number
+  amount_max: number
+  status: string
+  url: string
+  requirements_raw: string
+  deadline_loi: string | null
+  deadline_full: string | null
+  deadline_report: string | null
 }
 
 interface Field {
@@ -56,6 +65,18 @@ interface Form {
 
 const SOURCE_LABEL: Record<string, string> = { ai: 'AI', kb: 'KB', team: 'edited', empty: '' }
 
+/** Human "due in / overdue" label + tone for a YYYY-MM-DD (or ISO) date string. */
+function dueLabel(dateStr: string): { text: string; tone: 'ok' | 'soon' | 'over' } | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return null
+  const days = Math.ceil((d.getTime() - Date.now()) / 86_400_000)
+  if (days < 0) return { text: `overdue by ${-days} day${-days === 1 ? '' : 's'}`, tone: 'over' }
+  if (days === 0) return { text: 'due today', tone: 'soon' }
+  if (days <= 14) return { text: `in ${days} day${days === 1 ? '' : 's'}`, tone: 'soon' }
+  return { text: `in ${days} days`, tone: 'ok' }
+}
+
 export function GrantWorkspace({ grantId }: { grantId: string }) {
   const [grant, setGrant] = useState<Grant | null>(null)
   const [form, setForm] = useState<Form | null>(null)
@@ -76,6 +97,20 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
 
   // Grant-scoped documents — used to attach a file to file-type fields.
   const [grantDocs, setGrantDocs] = useState<{ id: string; name: string }[]>([])
+
+  // Editable submission details (when due / where to submit).
+  const [details, setDetails] = useState({
+    url: '',
+    deadline_loi: '',
+    deadline_full: '',
+    deadline_report: '',
+  })
+  const [savingDetails, setSavingDetails] = useState(false)
+
+  // "What they fund" — funder intent (stored in requirements_raw).
+  const [fundingSummary, setFundingSummary] = useState('')
+  const [savingSummary, setSavingSummary] = useState(false)
+  const [summarizing, setSummarizing] = useState(false)
 
   const loadForm = useCallback(async () => {
     const res = await fetch(`/api/grants/${grantId}/form`)
@@ -102,7 +137,15 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           fetch(`/api/grants/${grantId}/form`),
         ])
         if (!g.ok) throw new Error('Grant not found.')
-        setGrant((await g.json()).grant)
+        const gd: Grant = (await g.json()).grant
+        setGrant(gd)
+        setDetails({
+          url: gd.url ?? '',
+          deadline_loi: gd.deadline_loi?.slice(0, 10) ?? '',
+          deadline_full: gd.deadline_full?.slice(0, 10) ?? '',
+          deadline_report: gd.deadline_report?.slice(0, 10) ?? '',
+        })
+        setFundingSummary(gd.requirements_raw ?? '')
         if (f.ok) {
           const data = await f.json()
           setForm(data.form)
@@ -284,6 +327,63 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     }
   }
 
+  async function saveDetails() {
+    setSavingDetails(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/grants/${grantId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: details.url.trim(),
+          deadline_loi: details.deadline_loi || null,
+          deadline_full: details.deadline_full || null,
+          deadline_report: details.deadline_report || null,
+        }),
+      })
+      await readApiJson(res, 'Save')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save submission details.')
+    } finally {
+      setSavingDetails(false)
+    }
+  }
+
+  async function saveSummary() {
+    setSavingSummary(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/grants/${grantId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requirements_raw: fundingSummary }),
+      })
+      await readApiJson(res, 'Save')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the funding summary.')
+    } finally {
+      setSavingSummary(false)
+    }
+  }
+
+  async function summarizeFunding() {
+    setSummarizing(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/ai/funding-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grant_id: grantId }),
+      })
+      const data = await readApiJson<{ summary: string }>(res, 'Summarize')
+      setFundingSummary(data.summary)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not summarize funding.')
+    } finally {
+      setSummarizing(false)
+    }
+  }
+
   async function promoteKb() {
     setPromoting(true)
     setError(null)
@@ -330,6 +430,117 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           {grant?.funder} · <span className="capitalize">{grant?.funder_type}</span>
         </p>
       </div>
+
+      {/* Submission & deadlines — when it's due and where to submit */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Submission &amp; deadlines</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            {(
+              [
+                ['deadline_loi', 'Letter of intent'],
+                ['deadline_full', 'Full application'],
+                ['deadline_report', 'Report'],
+              ] as const
+            ).map(([key, label]) => {
+              const info = dueLabel(details[key])
+              return (
+                <div key={key} className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">{label}</label>
+                  <Input
+                    type="date"
+                    value={details[key]}
+                    onChange={(e) => setDetails({ ...details, [key]: e.target.value })}
+                  />
+                  {info && (
+                    <p
+                      className={`text-xs ${
+                        info.tone === 'over'
+                          ? 'text-destructive'
+                          : info.tone === 'soon'
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-muted-foreground'
+                      }`}
+                    >
+                      {info.text}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Where to submit</label>
+            <div className="flex gap-2">
+              <Input
+                value={details.url}
+                onChange={(e) => setDetails({ ...details, url: e.target.value })}
+                placeholder="https://… application / submission page"
+              />
+              {details.url && (
+                <Button
+                  variant="outline"
+                  render={
+                    <a href={details.url} target="_blank" rel="noopener noreferrer" />
+                  }
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Open
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <Button onClick={saveDetails} disabled={savingDetails} variant="secondary">
+            {savingDetails ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save submission details
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* What they fund — funder intent, so wording aligns with their priorities */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">What they fund</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            The funder&apos;s priorities and eligibility. The AI uses this when generating the
+            form and drafting the narrative, so your wording aligns with their intent.
+          </p>
+          <Textarea
+            rows={6}
+            value={fundingSummary}
+            onChange={(e) => setFundingSummary(e.target.value)}
+            placeholder="What this funder funds, who's eligible, what they favor… or click 'Summarize with AI'."
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={saveSummary} disabled={savingSummary} variant="secondary">
+              {savingSummary ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save
+            </Button>
+            <Button variant="outline" onClick={summarizeFunding} disabled={summarizing}>
+              {summarizing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              Summarize with AI
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={generate} disabled={generating}>

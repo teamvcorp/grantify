@@ -51,7 +51,11 @@ export async function POST(req: Request) {
   const prompt = `Write a compelling, well-structured grant narrative for the application below. Use ONLY the information in the answered fields — do not invent facts, figures, or outcomes. Write in clear, professional prose with short section headings. Aim for a cohesive narrative a reviewer would find persuasive.
 
 GRANT: ${grant.name} — ${grant.funder} (${grant.funder_type})
-
+${
+  grant.requirements_raw
+    ? `\nWHAT THE FUNDER FUNDS (align the emphasis, framing, and language to these priorities — but do not invent facts not supported by the answers below):\n${grant.requirements_raw}\n`
+    : ''
+}
 ANSWERED FIELDS:
 ${answered.map((f) => `## ${f.question}\n${f.answer}`).join('\n\n')}
 

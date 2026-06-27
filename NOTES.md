@@ -231,6 +231,17 @@ there's no self-serve invite/reset flow yet.
   violet purpose badge. `KbInput.purpose_id` (string→ObjectId in routes). Seed ties its KB to the
   seeded purpose. Existing entries without the field read as null (safe).
 
+## Submission details + funding summary (done)
+
+- `GrantPatch` extended with `url`, `deadline_loi/full/report` (ISO→Date in PATCH), `requirements_raw`.
+  `GET /api/grants/[id]` returns all of them.
+- Workspace **"Submission & deadlines"** card: editable LOI/full/report dates with "in N days / overdue"
+  labels + "Where to submit" URL with an Open button.
+- Workspace **"What they fund"** card: editable funder-intent text (stored in `requirements_raw`) +
+  **"Summarize with AI"** → `POST /api/ai/funding-summary` (web search, thinking off, max_uses 2,
+  maxDuration 300, hardened). `requirements_raw` feeds BOTH generate-form and draft-narrative prompts
+  so wording aligns with funder intent. AI-discovered imports prefill it from the discovery summary.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

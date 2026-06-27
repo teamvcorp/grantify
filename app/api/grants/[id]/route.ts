@@ -49,7 +49,9 @@ export async function GET(
       amount_max: g.amount_max,
       status: g.status,
       phase: g.phase,
+      deadline_loi: g.deadline_loi ? g.deadline_loi.toISOString() : null,
       deadline_full: g.deadline_full ? g.deadline_full.toISOString() : null,
+      deadline_report: g.deadline_report ? g.deadline_report.toISOString() : null,
       url: g.url,
       requirements_raw: g.requirements_raw,
       notes: g.notes,
@@ -81,9 +83,14 @@ export async function PATCH(
     )
   }
 
-  const { phase, ...others } = parsed.data
+  const { phase, deadline_loi, deadline_full, deadline_report, ...others } = parsed.data
   const update: Partial<Grant> = { ...others, updated_at: new Date() }
   if (phase !== undefined) update.phase = phase as GrantPhase
+  // ISO date strings → Date | null.
+  if (deadline_loi !== undefined) update.deadline_loi = deadline_loi ? new Date(deadline_loi) : null
+  if (deadline_full !== undefined) update.deadline_full = deadline_full ? new Date(deadline_full) : null
+  if (deadline_report !== undefined)
+    update.deadline_report = deadline_report ? new Date(deadline_report) : null
 
   const col = await grants()
   const result = await col.updateOne(scope.filter, { $set: update })

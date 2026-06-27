@@ -50,12 +50,19 @@ export const GrantInput = z.object({
 })
 export type GrantInput = z.infer<typeof GrantInput>
 
-/** Partial update from the tracker UI — status / phase / notes. */
+/** Partial update — tracker (status/phase/notes) + submission details. */
 export const GrantPatch = z
   .object({
     status: z.enum(GRANT_STATUSES),
     phase: z.number().int().min(1).max(6),
     notes: z.string().max(5000),
+    // "What they fund" / funder intent — also read by the AI form + narrative.
+    requirements_raw: z.string().max(20000),
+    url: z.string().trim().max(2000),
+    // ISO date strings (or null to clear); converted to Date server-side.
+    deadline_loi: z.string().nullable(),
+    deadline_full: z.string().nullable(),
+    deadline_report: z.string().nullable(),
   })
   .partial()
 
