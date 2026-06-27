@@ -37,6 +37,30 @@ export function statusColor(
   }
 }
 
+/**
+ * Read a fetch Response as JSON, but tolerate a non-JSON body (e.g. a platform
+ * 5xx/timeout page). Throws a readable error instead of a cryptic JSON parse
+ * error so the UI can show what actually happened.
+ */
+export async function readApiJson<T = unknown>(res: Response, label = 'Request'): Promise<T> {
+  const text = await res.text()
+  let data: unknown = null
+  try {
+    data = text ? JSON.parse(text) : null
+  } catch {
+    data = null
+  }
+  if (!res.ok || data === null) {
+    const fromBody =
+      data && typeof data === 'object' && 'error' in data
+        ? String((data as { error: unknown }).error)
+        : ''
+    const timeout = res.status === 504 ? ' — the request timed out' : ''
+    throw new Error(fromBody || `${label} failed (HTTP ${res.status})${timeout}.`)
+  }
+  return data as T
+}
+
 export function sourceColor(source: string): 'emerald' | 'blue' | 'zinc' {
   switch (source) {
     case 'kb':

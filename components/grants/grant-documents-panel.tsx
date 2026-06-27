@@ -103,7 +103,7 @@ export function GrantDocumentsPanel({
           {docs.map((d) => (
             <li key={d.id} className="flex items-center justify-between gap-3 text-sm">
               <a
-                href={d.blob_url}
+                href={`/api/documents/${d.id}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="min-w-0 truncate hover:underline"

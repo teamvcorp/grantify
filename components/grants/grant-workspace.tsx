@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/catalyst/badge'
 import { Select } from '@/components/catalyst/select'
 import { Progress } from '@/components/ui/progress'
-import { sourceColor } from '@/lib/ui'
+import { sourceColor, readApiJson } from '@/lib/ui'
 import {
   Sparkles,
   Wand2,
@@ -19,6 +19,8 @@ import {
   ArrowLeft,
   Printer,
   Mail,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react'
 import { BudgetPanel } from '@/components/grants/budget-panel'
 import { ActivityPanel } from '@/components/grants/activity-panel'
@@ -101,6 +103,11 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     })()
   }, [grantId])
 
+  // Required fields still missing an answer — drives the pre-export compliance check.
+  const missingRequired = form
+    ? form.fields.filter((f) => f.required && !f.answer.trim())
+    : []
+
   function setAnswer(id: string, answer: string) {
     setForm((f) =>
       f ? { ...f, fields: f.fields.map((x) => (x.id === id ? { ...x, answer } : x)) } : f
@@ -116,8 +123,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ grant_id: grantId }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Generation failed.')
+      const data = await readApiJson<{ form: Form }>(res, 'Generation')
       setForm(data.form)
       bumpActivity()
     } catch (err) {
@@ -136,8 +142,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ grant_id: grantId }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Matching failed.')
+      const data = await readApiJson<{ form: Form }>(res, 'Matching')
       setForm(data.form)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Matching failed.')
@@ -193,6 +198,14 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
 
   function exportPdf() {
     if (!form || !grant) return
+    if (
+      missingRequired.length > 0 &&
+      !confirm(
+        `${missingRequired.length} required field(s) are still empty. Export the application anyway?`
+      )
+    ) {
+      return
+    }
     const esc = (s: string) =>
       s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     const sections = form.sections
@@ -233,6 +246,14 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   }
 
   async function emailGrant() {
+    if (
+      missingRequired.length > 0 &&
+      !confirm(
+        `${missingRequired.length} required field(s) are still empty. Send the application anyway?`
+      )
+    ) {
+      return
+    }
     const to = prompt('Email the complete grant to (leave blank to send to yourself):')
     if (to === null) return // cancelled
     setError(null)
@@ -242,8 +263,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(to.trim() ? { to: to.trim() } : {}),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || 'Email failed.')
+      const data = await readApiJson<{ sent_to: string }>(res, 'Email')
       alert(`Sent to ${data.sent_to}.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Email failed.')
@@ -323,13 +343,38 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
             <Progress value={form.completed_pct} />
           </div>
 
+          {/* Pre-export compliance check */}
+          {missingRequired.length === 0 ? (
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-600/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              All required fields are complete — ready to export.
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-400/10 px-3 py-2 text-sm">
+              <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                {missingRequired.length} required field
+                {missingRequired.length === 1 ? '' : 's'} still need an answer before export
+              </div>
+              <ul className="ml-6 list-disc space-y-0.5 text-muted-foreground">
+                {missingRequired.map((f) => (
+                  <li key={f.id}>
+                    <a href={`#${f.id}`} className="hover:text-foreground hover:underline">
+                      {f.section} · {f.question}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {form.sections.map((section) => (
             <div key={section} className="space-y-4">
               <h2 className="text-lg font-semibold tracking-tight">{section}</h2>
               {form.fields
                 .filter((f) => f.section === section)
                 .map((f) => (
-                  <div key={f.id} className="space-y-1.5">
+                  <div key={f.id} id={f.id} className="scroll-mt-20 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <label className="text-sm font-medium">
                         {f.question}

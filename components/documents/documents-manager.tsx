@@ -115,7 +115,7 @@ export function DocumentsManager() {
               <CardContent className="flex items-center justify-between gap-4 py-3">
                 <div className="min-w-0 space-y-1">
                   <a
-                    href={d.blob_url}
+                    href={`/api/documents/${d.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="font-medium hover:underline"

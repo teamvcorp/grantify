@@ -150,6 +150,8 @@ export interface OrgDocument {
   category: DocumentCategory
   scope: 'org' | 'grant'
   blob_url: string
+  /** Blob pathname — the stable key used to stream/delete a PRIVATE blob. */
+  pathname: string
   file_type: string
   version: number
   uploaded_by: ObjectId

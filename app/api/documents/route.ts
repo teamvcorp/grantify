@@ -83,13 +83,17 @@ export async function POST(req: Request) {
       : null
 
   // Namespacing the blob path by org keeps tenants' files separate.
+  // PRIVATE access: blobs aren't publicly reachable — they're streamed back via
+  // the authenticated GET /api/documents/[id] route.
   let blobUrl: string
+  let blobPath: string
   try {
     const blob = await put(`${orgId.toString()}/${randomUUID()}-${file.name}`, file, {
-      access: 'public',
+      access: 'private',
       contentType: file.type || 'application/octet-stream',
     })
     blobUrl = blob.url
+    blobPath = blob.pathname
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upload failed.'
     return NextResponse.json({ error: message }, { status: 502 })
@@ -103,6 +107,7 @@ export async function POST(req: Request) {
     category,
     scope: grantId ? 'grant' : 'org',
     blob_url: blobUrl,
+    pathname: blobPath,
     file_type: file.type || 'application/octet-stream',
     version: 1,
     uploaded_by: new ObjectId(session.user.id),
