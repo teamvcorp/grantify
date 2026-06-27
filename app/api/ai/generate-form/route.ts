@@ -12,6 +12,7 @@ import {
 import { grants, grantForms } from '@/lib/collections'
 import { completedPct, formToClient } from '@/lib/forms'
 import { hasCredits, chargeUsage } from '@/lib/credits'
+import { getActiveInstructions, instructionsBlock } from '@/lib/org-ai'
 import { logActivity } from '@/lib/activity'
 import type { GrantFormField } from '@/lib/types'
 
@@ -65,8 +66,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Grant not found.' }, { status: 404 })
   }
 
+  const instructions = await getActiveInstructions(orgId)
   const prompt = `You are a grant-application expert. Based on the grant below, produce the list of application fields a nonprofit would need to complete. Group related fields into sections.
-
+${instructionsBlock(instructions)}
 GRANT
 - Name: ${grant.name}
 - Funder: ${grant.funder} (${grant.funder_type})

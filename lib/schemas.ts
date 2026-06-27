@@ -92,6 +92,8 @@ export const USER_ROLES = ['admin', 'member', 'viewer'] as const
 export const OrgUpdate = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   ein: z.string().trim().max(20).optional(),
+  // House instructions fed into every AI grant operation.
+  ai_instructions: z.string().max(5000).optional(),
 })
 
 /** Add a team member (admin only). */

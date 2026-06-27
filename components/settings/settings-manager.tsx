@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/catalyst/button'
 import { Button as IconButton } from '@/components/ui/button'
 import { Input } from '@/components/catalyst/input'
+import { Textarea } from '@/components/catalyst/textarea'
 import { Select } from '@/components/catalyst/select'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,6 +35,7 @@ export function SettingsManager() {
   // Org profile
   const [orgName, setOrgName] = useState('')
   const [ein, setEin] = useState('')
+  const [aiInstructions, setAiInstructions] = useState('')
   const [plan, setPlan] = useState('free')
   const [billingConfigured, setBillingConfigured] = useState(false)
   const [billingBusy, setBillingBusy] = useState(false)
@@ -72,6 +74,7 @@ export function SettingsManager() {
           const data = await o.json()
           setOrgName(data.org.name)
           setEin(data.org.ein)
+          setAiInstructions(data.org.ai_instructions ?? '')
           setPlan(data.org.plan)
           setRole(data.role)
           setBillingConfigured(data.billing_configured)
@@ -95,7 +98,11 @@ export function SettingsManager() {
       const res = await fetch('/api/org', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: orgName.trim(), ein: ein.trim() }),
+        body: JSON.stringify({
+          name: orgName.trim(),
+          ein: ein.trim(),
+          ai_instructions: aiInstructions,
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Save failed.')
@@ -245,6 +252,24 @@ export function SettingsManager() {
               />
             </div>
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="org-ai">AI writing instructions</Label>
+            <p className="text-xs text-muted-foreground">
+              House guidance applied to every AI operation — voice, strategy, and how to position
+              your organization. Used when summarizing funders, generating forms, drafting
+              narratives, and polishing answers.
+            </p>
+            <Textarea
+              id="org-ai"
+              rows={5}
+              value={aiInstructions}
+              onChange={(e) => setAiInstructions(e.target.value)}
+              disabled={!isAdmin}
+              placeholder="e.g. We are a 501(c)(3) serving rural youth. Emphasize measurable outcomes and community partnerships. Write in plain, confident language; avoid jargon. Always tie our work to the funder's stated priorities."
+            />
+          </div>
+
           {isAdmin && (
             <div className="flex items-center gap-3">
               <Button onClick={saveOrg} disabled={savingOrg || !orgName.trim()} color="emerald">

@@ -89,6 +89,7 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   const [savingFields, setSavingFields] = useState(false)
   const [savingNarrative, setSavingNarrative] = useState(false)
   const [promoting, setPromoting] = useState(false)
+  const [polishingId, setPolishingId] = useState<string | null>(null)
 
   const [narrative, setNarrative] = useState('')
   // Bumped after actions that write activity, to refresh the activity panel.
@@ -384,6 +385,26 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     }
   }
 
+  async function polishField(fieldId: string) {
+    setPolishingId(fieldId)
+    setError(null)
+    try {
+      // Persist the current text first so we polish what's on screen.
+      await saveFields()
+      const res = await fetch('/api/ai/polish-field', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grant_id: grantId, field_id: fieldId }),
+      })
+      const data = await readApiJson<{ form: Form }>(res, 'Polish')
+      if (data.form) setForm(data.form)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Polish failed.')
+    } finally {
+      setPolishingId(null)
+    }
+  }
+
   async function promoteKb() {
     setPromoting(true)
     setError(null)
@@ -623,6 +644,22 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
                       </label>
                       {SOURCE_LABEL[f.source] && (
                         <Badge color={sourceColor(f.source)}>{SOURCE_LABEL[f.source]}</Badge>
+                      )}
+                      {(f.type === 'textarea' || f.type === 'text') && f.answer.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => polishField(f.id)}
+                          disabled={polishingId === f.id || savingFields}
+                          className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                          title="Clean up this section with AI"
+                        >
+                          {polishingId === f.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-3 w-3" />
+                          )}
+                          Polish
+                        </button>
                       )}
                     </div>
                     {f.help_text && (

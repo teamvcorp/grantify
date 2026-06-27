@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth'
 import { getAnthropic, GRANT_OS_MODEL, WEB_SEARCH_TOOL, textFromMessage } from '@/lib/anthropic'
 import { grants } from '@/lib/collections'
 import { hasCredits, chargeUsage } from '@/lib/credits'
+import { getActiveInstructions, instructionsBlock } from '@/lib/org-ai'
 
 /**
  * POST /api/ai/funding-summary
@@ -48,8 +49,9 @@ export async function POST(req: Request) {
       )
     }
 
+    const instructions = await getActiveInstructions(orgId)
     const prompt = `Research this grant and summarize what the funder actually funds, so an applicant can align their proposal with the funder's intent.
-
+${instructionsBlock(instructions)}
 GRANT: ${grant.name}
 FUNDER: ${grant.funder} (${grant.funder_type})
 ${grant.url ? `URL: ${grant.url}` : ''}

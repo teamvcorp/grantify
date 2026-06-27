@@ -26,6 +26,7 @@ export async function GET() {
       name: org.name,
       ein: org.ein,
       plan: org.plan,
+      ai_instructions: org.ai_instructions ?? '',
     },
     role: session.user.role,
     billing_configured: billingConfigured(),

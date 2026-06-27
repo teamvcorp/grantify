@@ -259,6 +259,19 @@ there's no self-serve invite/reset flow yet.
 - `TOKEN_REUP_PLAN` in `.env.local` (set) + `.env.example`. Admin org funded to $100 for testing.
 - Web search per-request cost is an ESTIMATE — tune `WEB_SEARCH_PER_REQUEST` in `lib/credits.ts`.
 
+## Active AI instructions + per-section polish (done)
+
+- `Org.ai_instructions` — house guidance (voice/strategy/positioning), editable by admins in
+  Settings (Organization card). `OrgUpdate.ai_instructions`; `GET /api/org` returns it.
+- `lib/org-ai.ts`: `getActiveInstructions(orgId)`, `getCompanyContext(orgId)` (KB Q&A, truncated),
+  `instructionsBlock()` prompt helper.
+- Injected into prompts: `generate-form`, `funding-summary` (instructions), `draft-narrative`
+  (instructions + company info; also told to clean up each section as it writes).
+- `POST /api/ai/polish-field` ({grant_id, field_id}) — rewrites one field answer using
+  instructions + company info + funder context, truthfully (no invented facts); saves it
+  (`source: 'team'`), credit-gated + charged. Per-field **Polish** button on text/textarea fields
+  in the workspace (saves first, then polishes, then `setForm`).
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

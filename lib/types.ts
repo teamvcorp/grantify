@@ -172,6 +172,8 @@ export interface Org {
   ai_credits_cents?: number
   /** Lifetime AI spend, in cents (for display). */
   ai_spent_cents?: number
+  /** Active house instructions fed into every AI grant operation (voice, strategy, positioning). */
+  ai_instructions?: string
   created_at: Date
 }
 
