@@ -19,7 +19,7 @@ export function renderGrantHtml(
   grant: Grant,
   form: GrantForm | null,
   budget: Budget | null,
-  docNames: string[] = [],
+  docs: { attached: string[]; omitted: string[] } = { attached: [], omitted: [] },
   logoUrl = ''
 ): string {
   const H = (t: string) =>
@@ -81,12 +81,20 @@ export function renderGrantHtml(
       ${budget.notes ? `<p style="color:#444;white-space:pre-wrap">${esc(budget.notes)}</p>` : ''}`
   }
 
-  const documents =
-    docNames.length > 0
-      ? `${H('Supporting documents')}<p style="color:#666">Attached separately:</p><ul>${docNames
+  let documents = ''
+  if (docs.attached.length || docs.omitted.length) {
+    const attachedList = docs.attached.length
+      ? `<p style="color:#444">Attached to this email:</p><ul>${docs.attached
           .map((n) => `<li>${esc(n)}</li>`)
           .join('')}</ul>`
       : ''
+    const omittedList = docs.omitted.length
+      ? `<p style="color:#666">Too large to attach — request separately:</p><ul>${docs.omitted
+          .map((n) => `<li>${esc(n)}</li>`)
+          .join('')}</ul>`
+      : ''
+    documents = `${H('Supporting documents')}${attachedList}${omittedList}`
+  }
 
   const logo =
     logoUrl && logoUrl.startsWith('data:image/')

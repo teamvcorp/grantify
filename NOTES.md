@@ -281,9 +281,18 @@ there's no self-serve invite/reset flow yet.
 - **Letter of intent**: `POST /api/ai/draft-loi` ({grant_id}) — non-streaming, drafts a 1-page LOI
   from the answered fields + instructions + company info; saves `GrantForm.loi_draft`. Workspace
   "Letter of intent" section (generate/edit/save, 90s client timeout). `FormPatch.loi_draft` saves edits.
-- **Export completeness**: both PDF export (`exportPdf`) and email (`renderGrantHtml`) now include
-  LOI + form Q&A + narrative (+ budget on email) + a "Supporting documents" list (names; files are
-  attached separately, not embedded). Email route fetches grant docs and passes names.
+- **Export completeness**: both PDF export (`exportPdf`) and email (`renderGrantHtml`) include
+  LOI + form Q&A + narrative (+ budget on email). The email **attaches the actual supporting-doc
+  files**: the route downloads each grant doc from the private blob store (`get(pathname,
+  {access:'private'})` → `Buffer`), passes them to Resend via `sendEmail({attachments})`. Total
+  capped at 20 MB (Resend's limit is 40 MB); anything over the budget or that fails to fetch is
+  skipped and listed under "Too large to attach — request separately". `renderGrantHtml` takes
+  `{attached, omitted}` and the email body lists both. (PDF export still lists doc names only.)
+- **Billing always shown**: `billingConfigured()` only needs `STRIPE_SECRET_KEY` (set, along with
+  BASIC/PRO/TOKEN price ids — only `STRIPE_WEBHOOK_SECRET` is still unset for prod webhooks). The
+  Settings "Plan & billing" card no longer shows the "not configured / add these envs" placeholder;
+  admins always get the upgrade/manage buttons (the routes 503 with a clear error if a key is ever
+  missing).
 - **Org logo**: stored as a **data URI** on `Org.logo_url` (NOT a blob — the Blob store is private,
   so a public logo URL isn't available; a data URI embeds cleanly in the print PDF + email). Set in
   Settings → Organization (file→`FileReader.readAsDataURL`, <300KB, image/* only) and saved via the

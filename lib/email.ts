@@ -23,11 +23,18 @@ function getResend(): Resend {
   return client
 }
 
+export interface EmailAttachment {
+  filename: string
+  content: Buffer
+  contentType?: string
+}
+
 export interface SendEmailOptions {
   to: string | string[]
   subject: string
   html: string
   replyTo?: string
+  attachments?: EmailAttachment[]
 }
 
 /** Send an email via Resend. Throws on a missing FROM or a provider error. */
@@ -41,6 +48,11 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
     subject: opts.subject,
     html: opts.html,
     replyTo: opts.replyTo,
+    attachments: opts.attachments?.map((a) => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.contentType,
+    })),
   })
   if (error) {
     throw new Error(error.message || 'Email send failed.')

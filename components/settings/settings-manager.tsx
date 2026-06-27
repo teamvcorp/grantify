@@ -40,7 +40,6 @@ export function SettingsManager() {
   const [logoError, setLogoError] = useState<string | null>(null)
   const logoInput = useRef<HTMLInputElement>(null)
   const [plan, setPlan] = useState('free')
-  const [billingConfigured, setBillingConfigured] = useState(false)
   const [billingBusy, setBillingBusy] = useState(false)
   const [billingMsg, setBillingMsg] = useState<string | null>(null)
   const [savingOrg, setSavingOrg] = useState(false)
@@ -81,7 +80,6 @@ export function SettingsManager() {
           setLogoUrl(data.org.logo_url ?? '')
           setPlan(data.org.plan)
           setRole(data.role)
-          setBillingConfigured(data.billing_configured)
         }
         if (t.ok) {
           const data = await t.json()
@@ -431,12 +429,6 @@ export function SettingsManager() {
 
           {!isAdmin ? (
             <p className="text-sm text-muted-foreground">Ask an admin to change the plan.</p>
-          ) : !billingConfigured ? (
-            <p className="text-sm text-muted-foreground">
-              Billing isn&apos;t configured yet. Add <code>STRIPE_SECRET_KEY</code>,{' '}
-              <code>STRIPE_WEBHOOK_SECRET</code>, <code>BASIC_GRANTS_PLAN</code>, and{' '}
-              <code>PRO_GRANTS_PLAN</code> to enable upgrades.
-            </p>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               {plan === 'free' && (

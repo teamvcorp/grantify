@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
+import { get } from '@vercel/blob'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { budgets, documents, grantForms, grants, orgs } from '@/lib/collections'
-import { emailConfigured, sendEmail } from '@/lib/email'
+import { emailConfigured, sendEmail, type EmailAttachment } from '@/lib/email'
 import { renderGrantHtml } from '@/lib/grant-render'
+
+/** Resend caps a message (body + attachments) at 40 MB; stay well under it. */
+const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 
 /**
  * POST /api/grants/[id]/email — email the complete grant (form + narrative +
@@ -63,16 +67,47 @@ export async function POST(
   const budget = await budgetsCol.findOne({ grant_id: grantOid, org_id: orgId })
   const docsCol = await documents()
   const docs = await docsCol.find({ grant_id: grantOid, org_id: orgId }).toArray()
-  const docNames = docs.map((d) => d.name)
   const orgsCol = await orgs()
   const org = await orgsCol.findOne({ _id: orgId })
   const logoUrl = org?.logo_url ?? ''
+
+  // Download each supporting doc from the private blob store and attach it.
+  // Skip (rather than fail the whole send) anything that can't be fetched, and
+  // stop once we'd exceed Resend's size budget — the body still lists every doc.
+  const attachments: EmailAttachment[] = []
+  const attached: string[] = []
+  const omitted: string[] = []
+  let totalBytes = 0
+  for (const doc of docs) {
+    try {
+      const result = await get(doc.pathname, { access: 'private' })
+      if (!result || result.statusCode !== 200) {
+        omitted.push(doc.name)
+        continue
+      }
+      const buf = Buffer.from(await new Response(result.stream).arrayBuffer())
+      if (totalBytes + buf.length > MAX_ATTACHMENT_BYTES) {
+        omitted.push(doc.name)
+        continue
+      }
+      totalBytes += buf.length
+      attachments.push({
+        filename: doc.name,
+        content: buf,
+        contentType: doc.file_type || result.blob.contentType || 'application/octet-stream',
+      })
+      attached.push(doc.name)
+    } catch {
+      omitted.push(doc.name)
+    }
+  }
 
   try {
     await sendEmail({
       to,
       subject: `Grant application — ${grant.name}`,
-      html: renderGrantHtml(grant, form, budget, docNames, logoUrl),
+      html: renderGrantHtml(grant, form, budget, { attached, omitted }, logoUrl),
+      attachments: attachments.length ? attachments : undefined,
       // Replies go to the sender, not the no-reply from-address.
       replyTo: session.user.email ?? undefined,
     })
