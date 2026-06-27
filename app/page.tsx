@@ -9,6 +9,11 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { FundingHero } from '@/components/funding-hero'
+import { getFundingStats } from '@/lib/funding-stats'
+
+// Rebuild the page periodically so the monthly funding numbers refresh without a deploy.
+export const revalidate = 3600
 
 /**
  * Public marketing landing page — the indexable entry at getgrantify.com.
@@ -85,7 +90,9 @@ const jsonLd = {
   ],
 }
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const fundingStats = await getFundingStats()
+
   return (
     <div className="flex min-h-screen flex-col">
       <script
@@ -113,7 +120,12 @@ export default function LandingPage() {
 
       {/* Hero */}
       <main className="flex-1">
-        <section className="mx-auto max-w-3xl px-6 py-24 text-center">
+        <section className="mx-auto max-w-3xl px-6 py-20 text-center">
+          {/* Rolling live funding figures */}
+          <div className="mx-auto mb-10 max-w-xl rounded-2xl border bg-muted/30 px-6 py-8">
+            <FundingHero stats={fundingStats} />
+          </div>
+
           <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
             From grant discovery to submission — in a week, not a quarter
           </h1>
@@ -124,7 +136,7 @@ export default function LandingPage() {
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
             <Button size="lg" render={<Link href="/login" />}>
-              Get started <ArrowRight className="h-4 w-4" />
+              Claim your share <ArrowRight className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="lg" render={<Link href="/login" />}>
               Sign in
