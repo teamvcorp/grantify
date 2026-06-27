@@ -74,12 +74,23 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   const [activityKey, setActivityKey] = useState(0)
   const bumpActivity = () => setActivityKey((k) => k + 1)
 
+  // Grant-scoped documents — used to attach a file to file-type fields.
+  const [grantDocs, setGrantDocs] = useState<{ id: string; name: string }[]>([])
+
   const loadForm = useCallback(async () => {
     const res = await fetch(`/api/grants/${grantId}/form`)
     if (res.ok) {
       const data = await res.json()
       setForm(data.form)
       setNarrative(data.form?.narrative_draft ?? '')
+    }
+  }, [grantId])
+
+  const loadDocs = useCallback(async () => {
+    const res = await fetch(`/api/documents?grant_id=${grantId}`)
+    if (res.ok) {
+      const data = (await res.json()) as { documents: { id: string; name: string }[] }
+      setGrantDocs(data.documents.map((d) => ({ id: d.id, name: d.name })))
     }
   }, [grantId])
 
@@ -97,13 +108,14 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           setForm(data.form)
           setNarrative(data.form?.narrative_draft ?? '')
         }
+        await loadDocs()
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load.')
       } finally {
         setLoading(false)
       }
     })()
-  }, [grantId])
+  }, [grantId, loadDocs])
 
   // Required fields still missing an answer — drives the pre-export compliance check.
   const missingRequired = form
@@ -415,9 +427,24 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
                         ))}
                       </Select>
                     ) : f.type === 'file' ? (
-                      <p className="text-xs text-muted-foreground">
-                        Attach in the Documents vault.
-                      </p>
+                      grantDocs.length > 0 ? (
+                        <Select
+                          value={f.answer}
+                          onChange={(e) => setAnswer(f.id, e.target.value)}
+                          aria-label="Attach document"
+                        >
+                          <option value="">Attach a document…</option>
+                          {grantDocs.map((d) => (
+                            <option key={d.id} value={d.name}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Upload a file in the Documents section below, then select it here.
+                        </p>
+                      )
                     ) : f.type === 'text' || f.type === 'date' || f.type === 'number' ? (
                       <Input
                         type={f.type === 'text' ? 'text' : f.type}
@@ -491,7 +518,13 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           <CardTitle className="text-base">Documents</CardTitle>
         </CardHeader>
         <CardContent>
-          <GrantDocumentsPanel grantId={grantId} onChange={bumpActivity} />
+          <GrantDocumentsPanel
+            grantId={grantId}
+            onChange={() => {
+              bumpActivity()
+              loadDocs()
+            }}
+          />
         </CardContent>
       </Card>
 
