@@ -284,6 +284,12 @@ there's no self-serve invite/reset flow yet.
 - **Export completeness**: both PDF export (`exportPdf`) and email (`renderGrantHtml`) now include
   LOI + form Q&A + narrative (+ budget on email) + a "Supporting documents" list (names; files are
   attached separately, not embedded). Email route fetches grant docs and passes names.
+- **Org logo**: stored as a **data URI** on `Org.logo_url` (NOT a blob — the Blob store is private,
+  so a public logo URL isn't available; a data URI embeds cleanly in the print PDF + email). Set in
+  Settings → Organization (file→`FileReader.readAsDataURL`, <300KB, image/* only) and saved via the
+  existing `OrgUpdate.logo_url` PATCH (zod refines to `data:image/…` or `''`). Rendered in the
+  `exportPdf` header, `renderGrantHtml` header (email route passes `org.logo_url`), and returned by
+  `GET /api/org`. Note: some email clients strip `data:` `<img>` — logo always renders in the PDF.
 - Every AI op is scoped to the actively-worked `grant_id` and includes that grant's funder intent
   (`requirements_raw`) + funder — so the org instruction always applies *with that grant's intent*.
 - `PLAIN_TEXT_RULE` (org-ai.ts) is appended to the prose prompts (summary/narrative/polish + a note

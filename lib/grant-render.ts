@@ -19,7 +19,8 @@ export function renderGrantHtml(
   grant: Grant,
   form: GrantForm | null,
   budget: Budget | null,
-  docNames: string[] = []
+  docNames: string[] = [],
+  logoUrl = ''
 ): string {
   const H = (t: string) =>
     `<h2 style="font-size:15px;margin-top:24px;border-bottom:1px solid #ddd;padding-bottom:4px">${t}</h2>`
@@ -87,7 +88,13 @@ export function renderGrantHtml(
           .join('')}</ul>`
       : ''
 
+  const logo =
+    logoUrl && logoUrl.startsWith('data:image/')
+      ? `<img src="${logoUrl}" alt="" style="max-height:56px;max-width:220px;margin-bottom:16px" />`
+      : ''
+
   return `<div style="font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:680px;margin:0 auto">
+    ${logo}
     <h1 style="font-size:20px;margin-bottom:4px">${esc(grant.name)}</h1>
     <p style="color:#666;margin-top:0">${esc(grant.funder)} · ${esc(grant.funder_type)}</p>
     ${loi}${sections}${narrative}${budgetHtml}${documents}

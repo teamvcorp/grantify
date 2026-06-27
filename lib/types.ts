@@ -176,6 +176,8 @@ export interface Org {
   ai_spent_cents?: number
   /** Active house instructions fed into every AI grant operation (voice, strategy, positioning). */
   ai_instructions?: string
+  /** Org logo as a data URI, shown on exported/emailed documents. */
+  logo_url?: string
   created_at: Date
 }
 

@@ -118,6 +118,9 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   const [savingSummary, setSavingSummary] = useState(false)
   const [summarizing, setSummarizing] = useState(false)
 
+  // Org logo (data URI), shown on the exported application header.
+  const [logoUrl, setLogoUrl] = useState('')
+
   const loadForm = useCallback(async () => {
     const res = await fetch(`/api/grants/${grantId}/form`)
     if (res.ok) {
@@ -139,10 +142,15 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
   useEffect(() => {
     ;(async () => {
       try {
-        const [g, f] = await Promise.all([
+        const [g, f, o] = await Promise.all([
           fetch(`/api/grants/${grantId}`),
           fetch(`/api/grants/${grantId}/form`),
+          fetch('/api/org'),
         ])
+        if (o.ok) {
+          const od = await o.json()
+          setLogoUrl(od.org?.logo_url ?? '')
+        }
         if (!g.ok) throw new Error('Grant not found.')
         const gd: Grant = (await g.json()).grant
         setGrant(gd)
@@ -316,14 +324,19 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
           .map((d) => `<li>${esc(d.name)}</li>`)
           .join('')}</ul>`
       : ''
+    const logoHtml =
+      logoUrl && logoUrl.startsWith('data:image/')
+        ? `<img class="logo" src="${logoUrl}" alt=""/>`
+        : ''
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(
       grant.name
     )}</title><style>
       body{font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:32px auto;padding:0 16px;color:#111}
       h1{font-size:20px} h2{font-size:15px;margin-top:24px;border-bottom:1px solid #ddd;padding-bottom:4px}
       .field{margin:10px 0} .q{font-weight:600} .a{white-space:pre-wrap} .narr{white-space:pre-wrap}
-      .muted{color:#666}
+      .muted{color:#666} .logo{max-height:56px;max-width:220px;margin-bottom:16px}
     </style></head><body>
+      ${logoHtml}
       <h1>${esc(grant.name)}</h1>
       <p class="muted">${esc(grant.funder)} · ${esc(grant.funder_type)}</p>
       ${loiHtml}${sections}${narr}${docsHtml}

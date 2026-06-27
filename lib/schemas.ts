@@ -94,6 +94,14 @@ export const OrgUpdate = z.object({
   ein: z.string().trim().max(20).optional(),
   // House instructions fed into every AI grant operation.
   ai_instructions: z.string().max(5000).optional(),
+  // Logo as a data URI (or '' to clear). ~700k chars ≈ a ~500KB image.
+  logo_url: z
+    .string()
+    .max(700000)
+    .refine((v) => v === '' || v.startsWith('data:image/'), {
+      message: 'Logo must be an image.',
+    })
+    .optional(),
 })
 
 /** Add a team member (admin only). */

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/catalyst/button'
 import { Button as IconButton } from '@/components/ui/button'
 import { Input } from '@/components/catalyst/input'
@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Plus, Trash2, Loader2, Save, KeyRound } from 'lucide-react'
+import { Plus, Trash2, Loader2, Save, KeyRound, ImageIcon } from 'lucide-react'
 import { USER_ROLES } from '@/lib/schemas'
 
 interface Member {
@@ -36,6 +36,9 @@ export function SettingsManager() {
   const [orgName, setOrgName] = useState('')
   const [ein, setEin] = useState('')
   const [aiInstructions, setAiInstructions] = useState('')
+  const [logoUrl, setLogoUrl] = useState('')
+  const [logoError, setLogoError] = useState<string | null>(null)
+  const logoInput = useRef<HTMLInputElement>(null)
   const [plan, setPlan] = useState('free')
   const [billingConfigured, setBillingConfigured] = useState(false)
   const [billingBusy, setBillingBusy] = useState(false)
@@ -75,6 +78,7 @@ export function SettingsManager() {
           setOrgName(data.org.name)
           setEin(data.org.ein)
           setAiInstructions(data.org.ai_instructions ?? '')
+          setLogoUrl(data.org.logo_url ?? '')
           setPlan(data.org.plan)
           setRole(data.role)
           setBillingConfigured(data.billing_configured)
@@ -91,6 +95,28 @@ export function SettingsManager() {
     })()
   }, [])
 
+  // Read the chosen image into a data URI we can embed in exports/emails.
+  // Capped well under the org doc limit; logos aren't sensitive so a data URI
+  // (rather than a private blob) keeps it renderable in PDFs and email.
+  function onLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file
+    if (!file) return
+    setLogoError(null)
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Please choose an image file (PNG, JPG, or SVG).')
+      return
+    }
+    if (file.size > 300_000) {
+      setLogoError('Logo must be under 300 KB. Try a smaller or compressed image.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => setLogoUrl(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => setLogoError('Could not read that file.')
+    reader.readAsDataURL(file)
+  }
+
   async function saveOrg() {
     setSavingOrg(true)
     setOrgMsg(null)
@@ -102,6 +128,7 @@ export function SettingsManager() {
           name: orgName.trim(),
           ein: ein.trim(),
           ai_instructions: aiInstructions,
+          logo_url: logoUrl,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -268,6 +295,44 @@ export function SettingsManager() {
               disabled={!isAdmin}
               placeholder="e.g. We are a 501(c)(3) serving rural youth. Emphasize measurable outcomes and community partnerships. Write in plain, confident language; avoid jargon. Always tie our work to the funder's stated priorities."
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Logo</Label>
+            <p className="text-xs text-muted-foreground">
+              Appears on exported applications, the Letter of Intent, and emailed documents. PNG,
+              JPG, or SVG under 300 KB. Save to apply.
+            </p>
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-white">
+                {logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={logoUrl} alt="Org logo" className="max-h-full max-w-full object-contain" />
+                ) : (
+                  <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                )}
+              </div>
+              {isAdmin && (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={logoInput}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={onLogoFile}
+                  />
+                  <Button outline onClick={() => logoInput.current?.click()}>
+                    {logoUrl ? 'Replace' : 'Upload'}
+                  </Button>
+                  {logoUrl && (
+                    <Button plain onClick={() => setLogoUrl('')}>
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+            {logoError && <p className="text-sm text-destructive">{logoError}</p>}
           </div>
 
           {isAdmin && (
