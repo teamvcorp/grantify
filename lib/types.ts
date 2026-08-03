@@ -12,7 +12,7 @@ import type { ObjectId } from 'mongodb'
  * present on the read path. We keep it optional to reduce friction on inserts.
  */
 
-export type FunderType = 'federal' | 'foundation' | 'state' | 'corporate'
+export type FunderType = 'federal' | 'foundation' | 'state' | 'corporate' | 'other'
 
 export type GrantStatus =
   | 'discovered'

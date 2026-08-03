@@ -85,10 +85,34 @@ Purpose + 2 grants + 2 KB entries only if the org has no purposes yet. Needs `ts
 
 ## AI discovery (done — first AI route)
 
-- `POST /api/ai/discover` ({purpose_id}) — org-scoped Purpose load, then Claude + `web_search`
-  (`GRANT_OS_MODEL`, adaptive thinking, `pause_turn` resume loop, JSON via `parseJsonFromText`).
-  Finds foundation/state/corporate grants (complements federal Grants.gov). `maxDuration = 60`.
+- `POST /api/ai/discover` ({purpose_id}) — org-scoped Purpose load, then Claude with **web_search +
+  web_fetch** (`GRANT_OS_MODEL`, `thinking:{type:'disabled'}`, `pause_turn` resume loop guard<8,
+  `maxDuration = 300`, JSON via `parseJsonFromText`). Finds foundation/state/corporate/**other**
+  grants (complements federal Grants.gov). See "Qualified non-federal discovery" below.
 - `GET /api/purposes` — list org purposes for the discovery dropdown.
+
+### Qualified non-federal discovery (make AI results match the federal detail bar)
+
+Goal: non-federal results must reach the same detail a federal Grants.gov record guarantees, and
+**anything that can't is excluded, not shown** (user constraint). Three changes vs the original:
+1. **Org context in the prompt** — `getActiveInstructions` + `getCompanyContext` + org name/EIN
+   (`lib/org-ai.ts`) so the model judges *eligibility* for THIS org (previously discovery saw only
+   the abstract Purpose — the other 5 AI routes already used org context).
+2. **Verify by fetch** — the prompt runs search → then `web_fetch` each candidate's real page to
+   confirm funder, deadline, eligibility. Returns `source_url` (page it opened), `deadline_kind`
+   ('fixed'|'rolling'), and required `eligibility`. `url` is `z.string().url()`.
+3. **Server-side `qualify()` gate** (runs after the Zod parse) EXCLUDES anything that fails the
+   contract: url must be http(s) **and pass a liveness check** (`isLive()`: GET, 5s timeout, follow
+   redirects; drop only DNS-fail / 404 / 410 — bot-blocked 401/403/405/429 kept); `deadline_kind`
+   'fixed' → valid, non-past ISO date, 'rolling' → date null & explicit; `eligibility` non-empty;
+   dedup by normalized url + `funder|name` within the batch AND against already-imported grants.
+   Response adds `excluded_count`. Cap `MAX_CANDIDATES = 6`.
+Client (`grant-search.tsx`): Verified + Rolling badges, eligibility line, "N verified — M excluded".
+Import maps `eligibility → requirements_raw` (real requirements feed the form/narrative), and only a
+'fixed' deadline maps to `deadline_full`. `'other'` added to `FUNDER_TYPES`/`FunderType`. Web-tool
+type strings + pattern saved in `docs/anthropic-web-tools.md`. NOTE: line 40-41's "adaptive thinking"
+/ old `maxDuration=60` referred to the pre-verification version — discovery now disables thinking and
+uses 300s (still Vercel-Pro-dependent; Hobby's 60s clamp will time out).
 - UI: `components/grants/grant-search.tsx` now has a Purpose picker + "Discover with AI" section
   alongside the federal results.
 

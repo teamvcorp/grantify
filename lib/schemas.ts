@@ -5,7 +5,7 @@ import { z } from 'zod'
  * avoids drift between the create and update paths.
  */
 
-export const FUNDER_TYPES = ['federal', 'foundation', 'state', 'corporate'] as const
+export const FUNDER_TYPES = ['federal', 'foundation', 'state', 'corporate', 'other'] as const
 
 /** Input shape for creating/updating a Purpose (org_id + timestamps are server-set). */
 export const PurposeInput = z.object({

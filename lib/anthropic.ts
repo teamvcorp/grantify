@@ -21,6 +21,17 @@ export const WEB_SEARCH_TOOL = {
   name: 'web_search' as const,
 }
 
+/**
+ * Web fetch tool (dynamic filtering) — supported on Sonnet 4.6 / Opus 4.6+.
+ * Lets the model open a specific URL and read the page, so it can VERIFY a
+ * discovered grant against its real source instead of trusting search snippets.
+ * See docs/anthropic-web-tools.md.
+ */
+export const WEB_FETCH_TOOL = {
+  type: 'web_fetch_20260209' as const,
+  name: 'web_fetch' as const,
+}
+
 let client: Anthropic | undefined
 
 export function getAnthropic(): Anthropic {

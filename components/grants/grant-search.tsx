@@ -29,11 +29,13 @@ interface PurposeOption {
 interface AiResult {
   name: string
   funder: string
-  funder_type: 'federal' | 'foundation' | 'state' | 'corporate'
+  funder_type: 'federal' | 'foundation' | 'state' | 'corporate' | 'other'
   amount_min: number | null
   amount_max: number | null
+  deadline_kind: 'fixed' | 'rolling'
   deadline: string | null
   url: string
+  eligibility: string
   focus_areas: string[]
   summary: string
 }
@@ -81,6 +83,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   const [aiResults, setAiResults] = useState<AiResult[] | null>(null)
+  const [aiExcluded, setAiExcluded] = useState(0)
 
   useEffect(() => {
     fetch('/api/purposes')
@@ -159,7 +162,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       // Read as text first: a platform 5xx (e.g. timeout) returns a non-JSON
       // body, which res.json() would choke on with a confusing parse error.
       const text = await res.text()
-      let data: { error?: string; results?: AiResult[] } | null = null
+      let data: { error?: string; results?: AiResult[]; excluded_count?: number } | null = null
       try {
         data = text ? JSON.parse(text) : null
       } catch {
@@ -172,6 +175,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
         )
       }
       setAiResults(data.results ?? [])
+      setAiExcluded(data.excluded_count ?? 0)
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Discovery failed.')
       setAiResults(null)
@@ -333,8 +337,10 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
             <Sparkles className="h-4 w-4" /> AI discovery
           </h2>
           <p className="text-sm text-muted-foreground">
-            Uses Claude with web search to find foundation, state, and corporate grants for the
-            selected purpose — the funders Grants.gov doesn&apos;t list.
+            Uses Claude to find foundation, state, corporate, and other private grants Grants.gov
+            doesn&apos;t list. Each result is <strong>verified against its real funder page</strong>{' '}
+            and matched to your organization&apos;s profile — anything that can&apos;t be confirmed to
+            a live link, deadline, and eligibility is excluded rather than shown.
           </p>
         </div>
 
@@ -345,10 +351,18 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
 
         {aiLoading && (
           <p className="text-sm text-muted-foreground">
-            Searching the web and evaluating funders — this can take up to a minute…
+            Searching, opening funder pages, and verifying each match — this can take a minute or
+            two…
           </p>
         )}
         {aiError && <p className="text-sm text-destructive">{aiError}</p>}
+
+        {aiResults && aiResults.length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            {aiResults.length} verified {aiResults.length === 1 ? 'match' : 'matches'}
+            {aiExcluded > 0 && ` — ${aiExcluded} excluded for insufficient detail`}.
+          </p>
+        )}
 
         <div className="space-y-3">
           {aiResults?.map((r, i) => {
@@ -370,12 +384,19 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
                       <Badge color={funderColor(r.funder_type)} className="capitalize">
                         {r.funder_type}
                       </Badge>
+                      <Badge color="emerald">Verified</Badge>
+                      {r.deadline_kind === 'rolling' && <Badge color="sky">Rolling</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      {r.funder} · {formatAmount(r.amount_min, r.amount_max)} · Closes{' '}
-                      {formatDate(r.deadline)}
+                      {r.funder} · {formatAmount(r.amount_min, r.amount_max)} ·{' '}
+                      {r.deadline_kind === 'rolling'
+                        ? 'Rolling / year-round'
+                        : `Closes ${formatDate(r.deadline)}`}
                     </p>
                     <p className="text-sm">{r.summary}</p>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium">Eligibility:</span> {r.eligibility}
+                    </p>
                   </div>
                   <ImportButton
                     k={key}
@@ -386,11 +407,14 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
                         funder_type: r.funder_type,
                         amount_min: r.amount_min ?? 0,
                         amount_max: r.amount_max ?? 0,
-                        deadline_full: r.deadline,
+                        // Only a fixed date maps to a deadline; rolling stays open.
+                        deadline_full: r.deadline_kind === 'fixed' ? r.deadline : null,
                         url: r.url,
                         focus_areas: r.focus_areas,
                         notes: r.summary,
-                        requirements_raw: r.summary,
+                        // Real eligibility/requirements from the verified page — the
+                        // form + narrative tools read this (not the short summary).
+                        requirements_raw: r.eligibility,
                         discovered_by: 'ai',
                       })
                     }

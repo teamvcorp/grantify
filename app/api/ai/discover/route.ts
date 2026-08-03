@@ -6,57 +6,91 @@ import {
   getAnthropic,
   GRANT_OS_MODEL,
   WEB_SEARCH_TOOL,
+  WEB_FETCH_TOOL,
   textFromMessage,
   parseJsonFromText,
 } from '@/lib/anthropic'
-import { purposes } from '@/lib/collections'
+import { grants, orgs, purposes } from '@/lib/collections'
+import {
+  getActiveInstructions,
+  getCompanyContext,
+  instructionsBlock,
+} from '@/lib/org-ai'
 import { hasCredits, chargeUsage } from '@/lib/credits'
 
 /**
  * POST /api/ai/discover
- * Claude-powered grant discovery, scoped to one Purpose.
+ * Claude-powered discovery of NON-federal grants (foundation, state, corporate,
+ * other), scoped to one Purpose. Grants.gov (see /api/grants/search) covers
+ * federal opportunities.
  *
- * Grants.gov (see /api/grants/search) covers FEDERAL opportunities only, so this
- * route asks Claude — with the server-side web_search tool — to find the grants
- * Grants.gov can't: foundation, state, and corporate funders matching the
- * Purpose's focus areas, geography, and target amount.
+ * QUALIFIED RESULTS: federal records arrive fully-formed (real funder, dates,
+ * live grants.gov URL). To match that bar for non-federal funders we (a) give
+ * the model the org's identity + eligibility context, (b) have it VERIFY each
+ * candidate by fetching the real funder page (web_fetch), and (c) apply a
+ * server-side qualification gate that EXCLUDES anything that can't meet the
+ * app's minimum detail — a live URL, funder, a deadline (fixed or explicit
+ * rolling), and eligibility text. Half-populated guesses are dropped, not shown.
+ * See docs/anthropic-web-tools.md and NOTES.md.
  *
- * SECURITY / multi-tenancy: the Purpose is loaded filtered by the caller's
- * org_id (from the auth session), never by purpose_id alone — see NOTES.md.
- * Server-only; the Anthropic key never reaches the client.
+ * SECURITY / multi-tenancy: the Purpose + org are loaded filtered by the
+ * caller's org_id (from the session), never by id alone. Server-only; the
+ * Anthropic key never reaches the client.
  */
 
 export const runtime = 'nodejs'
-// Web search + model reasoning is slow; give the function as much headroom as
-// the Vercel plan allows (Pro caps at 300s; Hobby clamps to 60s).
+// Search + per-candidate fetch + reasoning is slow; give the function as much
+// headroom as the plan allows (Vercel Pro caps at 300s; Hobby clamps to 60s).
 export const maxDuration = 300
+
+/** Up to this many candidates — capped to keep search+fetch within the limit. */
+const MAX_CANDIDATES = 6
 
 const BodySchema = z.object({ purpose_id: z.string().min(1) })
 
-/** What we ask Claude to return, and what we hand back to the client. */
+/**
+ * The QUALIFIED shape we ask Claude to return. Stricter than before:
+ * `url` is format-validated, `eligibility` is required, and `deadline_kind`
+ * distinguishes a fixed date from an explicitly-rolling program.
+ */
 const DiscoveredGrant = z.object({
-  name: z.string(),
-  funder: z.string(),
-  funder_type: z.enum(['federal', 'foundation', 'state', 'corporate']),
+  name: z.string().trim().min(1),
+  funder: z.string().trim().min(1),
+  funder_type: z.enum(['federal', 'foundation', 'state', 'corporate', 'other']),
   amount_min: z.number().nullable(),
   amount_max: z.number().nullable(),
-  deadline: z.string().nullable(),
-  url: z.string(),
+  deadline_kind: z.enum(['fixed', 'rolling']),
+  deadline: z.string().nullable(), // ISO "YYYY-MM-DD" when kind==='fixed', else null
+  url: z.string().url(),
+  source_url: z.string().url(), // the page the model actually fetched to verify
+  eligibility: z.string().trim().min(1),
   focus_areas: z.array(z.string()),
   summary: z.string(),
 })
+type DiscoveredGrant = z.infer<typeof DiscoveredGrant>
 const DiscoveredGrants = z.array(DiscoveredGrant)
 
-function buildPrompt(p: {
-  name: string
-  description: string
-  focus_areas: string[]
-  geography: string
-  target_amount: number
-  grant_types: string[]
-}): string {
-  return `You are a grant research assistant for a US nonprofit. Use web search to find CURRENTLY OPEN or recurring grant opportunities that fit this funding purpose.
+function buildPrompt(
+  p: {
+    name: string
+    description: string
+    focus_areas: string[]
+    geography: string
+    target_amount: number
+    grant_types: string[]
+  },
+  org: { name: string; ein: string; instructions: string; company: string }
+): string {
+  const companyBlock = org.company
+    ? `\nORGANIZATION KNOWLEDGE (facts about this nonprofit — use to judge eligibility and fit):\n${org.company}\n`
+    : ''
 
+  return `You are a grant research assistant for a US nonprofit. Find CURRENTLY OPEN or recurring grant opportunities that this specific organization is ELIGIBLE for and that fit its funding purpose.
+
+APPLICANT ORGANIZATION
+- Name: ${org.name}
+- EIN: ${org.ein || '(not provided)'}
+${instructionsBlock(org.instructions)}${companyBlock}
 PURPOSE
 - Name: ${p.name}
 - Description: ${p.description}
@@ -65,28 +99,122 @@ PURPOSE
 - Target amount: $${p.target_amount.toLocaleString()}
 - Preferred funder types: ${p.grant_types.join(', ') || 'any'}
 
-SCOPE: Prioritize FOUNDATION, STATE, and CORPORATE grants. Federal grants are already covered by a separate Grants.gov search, so only include a federal grant if it is an unusually strong match. Respect the geography constraint.
+SCOPE: Prioritize FOUNDATION, STATE, CORPORATE, and other private funders. Federal grants are covered by a separate Grants.gov search — only include a federal grant if it is an unusually strong match. Respect the geography constraint and the organization's eligibility.
 
-For each opportunity, verify it via web search and include the real application/info URL you found.
+METHOD (do this for real — do not skip):
+1. Use web_search to find candidate funders/programs that match the purpose.
+2. For EACH candidate, use web_fetch to OPEN its real application or program page and CONFIRM: the funder name, whether it is currently open, the deadline (a specific date, OR an explicit statement that applications are rolling / accepted year-round / always open), and the eligibility/requirements.
+3. Keep ONLY opportunities you could open and confirm. If a page will not load, or you cannot confirm the funder, deadline (fixed or explicitly rolling), and eligibility, DROP it. Never invent funders, URLs, deadlines, amounts, or eligibility. A blank/unknown deadline is NOT acceptable — either a real date or an explicit rolling program.
 
-Return ONLY a JSON array (no prose, no markdown fences) of up to 8 objects with EXACTLY these keys:
+Return ONLY a JSON array (no prose, no markdown fences) of up to ${MAX_CANDIDATES} verified objects with EXACTLY these keys:
 [{
   "name": string,
   "funder": string,
-  "funder_type": "federal" | "foundation" | "state" | "corporate",
-  "amount_min": number | null,
+  "funder_type": "federal" | "foundation" | "state" | "corporate" | "other",
+  "amount_min": number | null,        // null only if the funder truly does not publish it
   "amount_max": number | null,
-  "deadline": string | null,   // ISO date "YYYY-MM-DD" if known, else null
-  "url": string,
+  "deadline_kind": "fixed" | "rolling",
+  "deadline": string | null,          // ISO "YYYY-MM-DD" when deadline_kind is "fixed"; null when "rolling"
+  "url": string,                      // the application/info URL an applicant would use
+  "source_url": string,               // the exact page you fetched to verify this (often same as url)
+  "eligibility": string,              // who may apply + key requirements, from the page you read
   "focus_areas": string[],
-  "summary": string            // 1-2 sentences on fit and eligibility
+  "summary": string                   // 1-2 sentences on fit
 }]
-If you cannot find solid matches, return an empty array []. Do not invent funders or URLs.`
+If you cannot verify any solid matches, return an empty array [].`
+}
+
+/** Normalize a URL for dedup: drop protocol + trailing slashes, lowercase. */
+function normalizeUrl(u: string): string {
+  return u.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+}
+
+/** Name+funder dedup key. */
+function nameKey(funder: string, name: string): string {
+  return `${funder}|${name}`.trim().toLowerCase()
+}
+
+/**
+ * Server-side liveness backstop — we do NOT trust the model's claim that a URL
+ * resolves. A fabricated URL fails DNS/connection (caught → not live); a dead
+ * page returns 404/410. Bot-blocked-but-real sites (401/403/405/429) still
+ * prove the domain exists, so we keep them. 5s timeout, follows redirects.
+ */
+async function isLive(url: string): Promise<boolean> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (compatible; GrantOS-verifier/1.0; grant discovery link check)',
+      },
+    })
+    return !(res.status === 404 || res.status === 410)
+  } catch {
+    return false // DNS failure, connection refused, or timeout → unreachable
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * Apply the qualification contract. Runs AFTER the Zod shape parse and drops
+ * anything that can't meet the app's minimum detail. Returns the kept results
+ * (with `deadline` normalized) — the caller derives excluded_count.
+ */
+async function qualify(
+  items: DiscoveredGrant[],
+  existingKeys: Set<string>
+): Promise<Array<Omit<DiscoveredGrant, 'source_url'>>> {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const seen = new Set<string>()
+
+  // Pass 1: cheap synchronous field checks + dedup.
+  const candidates: Array<Omit<DiscoveredGrant, 'source_url'>> = []
+  for (const g of items) {
+    // URL must be http(s) (Zod already checked .url()).
+    let parsed: URL
+    try {
+      parsed = new URL(g.url)
+    } catch {
+      continue
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue
+
+    // Deadline rule: fixed → valid, not-past date; rolling → date must be null.
+    let deadline: string | null = null
+    if (g.deadline_kind === 'fixed') {
+      if (!g.deadline) continue
+      const d = new Date(g.deadline)
+      if (Number.isNaN(d.getTime()) || d < today) continue
+      deadline = g.deadline
+    }
+
+    // Dedup within the batch and against already-imported grants.
+    const uKey = normalizeUrl(g.url)
+    const nKey = nameKey(g.funder, g.name)
+    if (seen.has(uKey) || seen.has(nKey)) continue
+    if (existingKeys.has(uKey) || existingKeys.has(nKey)) continue
+    seen.add(uKey)
+    seen.add(nKey)
+
+    const { source_url: _src, ...rest } = g
+    void _src
+    candidates.push({ ...rest, deadline })
+  }
+
+  // Pass 2: liveness check in parallel (≤ MAX_CANDIDATES fetches).
+  const live = await Promise.all(candidates.map((c) => isLive(c.url)))
+  return candidates.filter((_, i) => live[i])
 }
 
 export async function POST(req: Request) {
-  // One outer try so EVERY failure path (auth, DB, Anthropic, parsing) returns
-  // JSON — never an unhandled 500 with a non-JSON body.
+  // One outer try so EVERY failure path returns JSON — never an unhandled 500.
   try {
     // 1. AuthN + tenant context.
     const session = await auth()
@@ -106,7 +234,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'A valid purpose_id is required.' }, { status: 400 })
     }
 
-    // 3. Load the Purpose — ORG-SCOPED (never by id alone).
+    // 3. Load the Purpose + org — ORG-SCOPED (never by id alone).
     const orgId = new ObjectId(session.user.org_id)
     const purposesCol = await purposes()
     const purpose = await purposesCol.findOne({
@@ -125,45 +253,71 @@ export async function POST(req: Request) {
       )
     }
 
-    // 4. Ask Claude, resuming across any server-tool pauses.
+    // Org identity + eligibility context (so the model can judge fit) and the
+    // set of already-imported grants for dedup — loaded in parallel.
+    const [orgsCol, grantsCol] = await Promise.all([orgs(), grants()])
+    const [org, instructions, company, existing] = await Promise.all([
+      orgsCol.findOne({ _id: orgId }),
+      getActiveInstructions(orgId),
+      getCompanyContext(orgId),
+      grantsCol.find({ org_id: orgId }).project({ url: 1, funder: 1, name: 1 }).toArray(),
+    ])
+    const existingKeys = new Set<string>()
+    for (const g of existing) {
+      if (g.url) existingKeys.add(normalizeUrl(g.url))
+      if (g.funder && g.name) existingKeys.add(nameKey(g.funder, g.name))
+    }
+
+    // 4. Ask Claude with web_search + web_fetch, resuming across server-tool pauses.
     const client = getAnthropic()
-    // Cap searches to keep total latency under the function limit.
-    const tools = [{ ...WEB_SEARCH_TOOL, max_uses: 3 }]
+    const tools = [
+      { ...WEB_SEARCH_TOOL, max_uses: 5 },
+      { ...WEB_FETCH_TOOL, max_uses: MAX_CANDIDATES },
+    ]
+    const prompt = buildPrompt(purpose, {
+      name: org?.name ?? 'Unknown organization',
+      ein: org?.ein ?? '',
+      instructions,
+      company,
+    })
     const messages: Parameters<typeof client.messages.create>[0]['messages'] = [
-      { role: 'user', content: buildPrompt(purpose) },
+      { role: 'user', content: prompt },
     ]
 
-    let response = await client.messages.create({
+    const createParams = {
       model: GRANT_OS_MODEL,
       max_tokens: 8000,
-      // Thinking is disabled here: on top of web search it pushed the call past
-      // the 60s function limit. Web search alone is what makes discovery useful.
-      thinking: { type: 'disabled' },
+      // Thinking disabled: on top of the web tools it would push the call past
+      // the function limit. The search+fetch grounding is what makes this useful.
+      thinking: { type: 'disabled' as const },
       tools,
       messages,
-    })
+    }
+
+    let response = await client.messages.create(createParams)
     await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
 
-    // Server-side tool loop can yield stop_reason: "pause_turn"; resume by
-    // re-sending the assistant turn until it finishes (bounded for safety).
+    // web_search/web_fetch can yield stop_reason "pause_turn"; resume until it
+    // finishes. Bounded higher than before because fetch adds turns.
     let guard = 0
-    while (response.stop_reason === 'pause_turn' && guard++ < 5) {
+    while (response.stop_reason === 'pause_turn' && guard++ < 8) {
       messages.push({ role: 'assistant', content: response.content })
-      response = await client.messages.create({
-        model: GRANT_OS_MODEL,
-        max_tokens: 8000,
-        thinking: { type: 'disabled' },
-        tools,
-        messages,
-      })
+      response = await client.messages.create(createParams)
       await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
     }
 
+    // 5. Parse + qualify. Shape-validate, then drop anything that can't meet the
+    //    app's minimum detail (live URL, deadline rule, eligibility, dedup).
     const text = textFromMessage(response)
     const raw = parseJsonFromText<unknown>(text)
-    const results = DiscoveredGrants.parse(raw)
+    const validated = DiscoveredGrants.parse(raw)
+    const results = await qualify(validated, existingKeys)
 
-    return NextResponse.json({ purpose_id: parsed.data.purpose_id, results })
+    return NextResponse.json({
+      purpose_id: parsed.data.purpose_id,
+      results,
+      excluded_count: validated.length - results.length,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'AI discovery failed.'
     return NextResponse.json({ error: message }, { status: 502 })
