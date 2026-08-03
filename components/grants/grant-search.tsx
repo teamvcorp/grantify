@@ -38,6 +38,9 @@ interface AiResult {
   summary: string
 }
 
+/** Grants.gov page size — must match the offset math used for pagination. */
+const ROWS = 25
+
 function formatDate(value: string | null): string {
   if (!value) return '—'
   const d = new Date(value)
@@ -69,6 +72,10 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [hitCount, setHitCount] = useState(0)
+  // 0-based page and the keyword that produced the current results, so Prev/Next
+  // re-query the same search regardless of later edits to the input box.
+  const [page, setPage] = useState(0)
+  const [submittedKeyword, setSubmittedKeyword] = useState('')
 
   // AI (Claude) discovery.
   const [aiLoading, setAiLoading] = useState(false)
@@ -104,26 +111,39 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
     }
   }
 
-  async function runSearch(e: React.FormEvent) {
-    e.preventDefault()
+  // Run one page of the federal search. `pageArg` is 0-based; the offset sent to
+  // Grants.gov is pageArg * ROWS (startRecordNum).
+  async function doSearch(pageArg: number, kw: string) {
     setLoading(true)
     setError(null)
     try {
       const res = await fetch('/api/grants/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyword: keyword.trim() || undefined, rows: 25 }),
+        body: JSON.stringify({
+          keyword: kw || undefined,
+          rows: ROWS,
+          startRecordNum: pageArg * ROWS,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Search failed.')
       setResults(data.results)
       setHitCount(data.hitCount)
+      setPage(pageArg)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed.')
       setResults(null)
     } finally {
       setLoading(false)
     }
+  }
+
+  function runSearch(e: React.FormEvent) {
+    e.preventDefault()
+    const kw = keyword.trim()
+    setSubmittedKeyword(kw)
+    void doSearch(0, kw) // a new search always starts on the first page
   }
 
   async function runDiscovery() {
@@ -223,9 +243,11 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
         </form>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
-        {results && (
+        {results && results.length > 0 && (
           <p className="text-sm text-muted-foreground">
-            {hitCount.toLocaleString()} matches on Grants.gov — showing {results.length}.
+            {hitCount.toLocaleString()} matches on Grants.gov — showing{' '}
+            {(page * ROWS + 1).toLocaleString()}–
+            {(page * ROWS + results.length).toLocaleString()}.
           </p>
         )}
 
@@ -272,6 +294,32 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
             </Card>
           ))}
         </div>
+
+        {results && results.length > 0 && hitCount > ROWS && (
+          <div className="flex items-center justify-between gap-4 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading || page === 0}
+              onClick={() => doSearch(page - 1, submittedKeyword)}
+            >
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {page + 1} of {Math.ceil(hitCount / ROWS).toLocaleString()}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading || (page + 1) * ROWS >= hitCount}
+              onClick={() => doSearch(page + 1, submittedKeyword)}
+            >
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              Next
+            </Button>
+          </div>
+        )}
 
         {results && results.length === 0 && (
           <p className="text-sm text-muted-foreground">No opportunities matched.</p>

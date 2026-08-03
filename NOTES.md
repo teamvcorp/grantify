@@ -61,6 +61,12 @@ or `export const dynamic = 'force-dynamic'` on DB-backed pages.
 - `proxy.ts` (Next 16's renamed `middleware`) guards the app/(app) routes, redirects to `/login`.
   API routes are excluded from the matcher — they call `auth()` and return 401 themselves.
 - `app/login` — minimal Credentials sign-in (server action + `useActionState`). Sidebar has sign-out.
+- **Grant search pagination**: `components/grants/grant-search.tsx` federal search now sends
+  `startRecordNum = page * ROWS` (ROWS=25, 0-based) and renders Prev/Next + "Page X of N" using the
+  API's `hitCount`. Previously it only ever requested the first 25 with no controls (the reported
+  bug). Grants.gov `startRecordNum` is a 0-based offset; verified live that offsets 0/25/50 return
+  distinct pages. `submittedKeyword` pins the query so paging doesn't drift if the input is edited.
+
 - `app/register` — **public self-serve signup** (server action + `useActionState`). Creates a new
   **Org** (plan `free`) + its first user as `admin`, then `signIn('credentials', {redirectTo:'/dashboard'})`.
   Security: scrypt hash; ensures the unique `email` index before insert (race-safe); rolls back the
