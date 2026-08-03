@@ -61,6 +61,13 @@ or `export const dynamic = 'force-dynamic'` on DB-backed pages.
 - `proxy.ts` (Next 16's renamed `middleware`) guards the app/(app) routes, redirects to `/login`.
   API routes are excluded from the matcher — they call `auth()` and return 401 themselves.
 - `app/login` — minimal Credentials sign-in (server action + `useActionState`). Sidebar has sign-out.
+- `app/register` — **public self-serve signup** (server action + `useActionState`). Creates a new
+  **Org** (plan `free`) + its first user as `admin`, then `signIn('credentials', {redirectTo:'/dashboard'})`.
+  Security: scrypt hash; ensures the unique `email` index before insert (race-safe); rolls back the
+  org if the user insert hits a duplicate-key; hidden **honeypot** (`company_website`) rejects bots;
+  generic errors (email-exists is the only disclosure). `RegisterInput` in schemas.ts. proxy.ts
+  redirects logged-in users away from `/register`; landing "Get started"/"Claim your share" →
+  `/register`. TODO: IP rate limiting (no infra yet). Team members still come via Settings invite.
 
 ## Seed (done)
 

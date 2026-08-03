@@ -29,8 +29,8 @@ export default auth((req) => {
   if (isProtected && !loggedIn) {
     return Response.redirect(new URL('/login', req.nextUrl))
   }
-  // Already signed in? Skip the login page.
-  if (pathname === '/login' && loggedIn) {
+  // Already signed in? Skip the login/register pages.
+  if ((pathname === '/login' || pathname === '/register') && loggedIn) {
     return Response.redirect(new URL('/dashboard', req.nextUrl))
   }
 })

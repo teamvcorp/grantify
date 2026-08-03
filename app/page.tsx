@@ -112,7 +112,7 @@ export default async function LandingPage() {
           <Button variant="ghost" size="sm" render={<Link href="/login" />}>
             Sign in
           </Button>
-          <Button size="sm" render={<Link href="/login" />}>
+          <Button size="sm" render={<Link href="/register" />}>
             Get started
           </Button>
         </nav>
@@ -135,7 +135,7 @@ export default async function LandingPage() {
             every grant in one pipeline.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
-            <Button size="lg" render={<Link href="/login" />}>
+            <Button size="lg" render={<Link href="/register" />}>
               Claim your share <ArrowRight className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="lg" render={<Link href="/login" />}>

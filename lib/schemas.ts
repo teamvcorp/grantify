@@ -104,6 +104,14 @@ export const OrgUpdate = z.object({
     .optional(),
 })
 
+/** Public self-serve registration — creates a new org + its first admin user. */
+export const RegisterInput = z.object({
+  name: z.string().trim().min(1, 'Your name is required').max(120),
+  org_name: z.string().trim().min(1, 'Organization name is required').max(200),
+  email: z.email('Enter a valid email').trim().toLowerCase(),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(200),
+})
+
 /** Add a team member (admin only). */
 export const MemberInput = z.object({
   email: z.email(),
