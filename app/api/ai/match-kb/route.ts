@@ -88,7 +88,7 @@ The answer should adapt the knowledge base content to the field's question; keep
     const client = getAnthropic()
     const response = await client.messages.create({
       model: GRANT_OS_MODEL,
-      max_tokens: 8000,
+      max_tokens: 12000,
       thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: prompt }],
     })

@@ -100,7 +100,7 @@ All string values (question, help_text, options) must be plain text — no Markd
     const client = getAnthropic()
     const response = await client.messages.create({
       model: GRANT_OS_MODEL,
-      max_tokens: 8000,
+      max_tokens: 12000,
       thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: prompt }],
     })

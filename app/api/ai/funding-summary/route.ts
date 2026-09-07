@@ -82,7 +82,7 @@ ${sourceText || '(no detailed guidelines on file — summarize at a high level f
     const client = getAnthropic()
     const response = await client.messages.create({
       model: GRANT_OS_MODEL,
-      max_tokens: 1500,
+      max_tokens: 2000,
       thinking: { type: 'disabled' },
       messages: [{ role: 'user', content: prompt }],
     })

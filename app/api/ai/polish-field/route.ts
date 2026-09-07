@@ -84,7 +84,7 @@ ${field.answer}`
       const client = getAnthropic()
       const response = await client.messages.create({
         model: GRANT_OS_MODEL,
-        max_tokens: 2000,
+        max_tokens: 3000,
         thinking: { type: 'disabled' },
         messages: [{ role: 'user', content: prompt }],
       })

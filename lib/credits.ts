@@ -18,11 +18,24 @@ interface ModelPrice {
 }
 
 const PRICES: Record<string, ModelPrice> = {
+  'claude-sonnet-5': { input: 2 / M, output: 10 / M }, // current pin
   'claude-sonnet-4-6': { input: 3 / M, output: 15 / M },
+  'claude-opus-5': { input: 5 / M, output: 25 / M },
   'claude-opus-4-8': { input: 5 / M, output: 25 / M },
   'claude-haiku-4-5': { input: 1 / M, output: 5 / M },
 }
-const DEFAULT_PRICE = PRICES['claude-sonnet-4-6']
+
+/**
+ * Fail-safe for a model with no price entry (someone sets ANTHROPIC_MODEL to
+ * something unlisted). We deliberately fall back to the MOST EXPENSIVE known
+ * rate, not the pinned model's: undercharging silently eats real margin on
+ * every call, while overcharging is visible and refundable. Keep PRICES current
+ * — this is a backstop, not a pricing strategy. Unknown models are logged once
+ * per call so the gap surfaces in the function logs.
+ */
+const DEFAULT_PRICE: ModelPrice = Object.values(PRICES).reduce((a, b) =>
+  b.output > a.output ? b : a
+)
 
 // Server-side web search: ~$10 per 1,000 requests (estimate; tune as needed).
 const WEB_SEARCH_PER_REQUEST = 0.01
@@ -44,17 +57,23 @@ interface UsageLike {
 
 /** Raw Anthropic cost of one response, in USD. */
 function rawCostUsd(model: string, usage: UsageLike): number {
-  const p = PRICES[model] ?? DEFAULT_PRICE
+  const p = PRICES[model]
+  if (!p) {
+    console.warn(
+      `[credits] No price entry for model "${model}" — billing at the highest known rate. Add it to PRICES in lib/credits.ts.`
+    )
+  }
+  const price = p ?? DEFAULT_PRICE
   const input = usage.input_tokens ?? 0
   const output = usage.output_tokens ?? 0
   const cacheRead = usage.cache_read_input_tokens ?? 0
   const cacheWrite = usage.cache_creation_input_tokens ?? 0
   const searches = usage.server_tool_use?.web_search_requests ?? 0
   return (
-    input * p.input +
-    output * p.output +
-    cacheRead * p.input * 0.1 + // cache reads ~0.1× input
-    cacheWrite * p.input * 1.25 + // 5-minute cache writes ~1.25× input
+    input * price.input +
+    output * price.output +
+    cacheRead * price.input * 0.1 + // cache reads ~0.1× input
+    cacheWrite * price.input * 1.25 + // 5-minute cache writes ~1.25× input
     searches * WEB_SEARCH_PER_REQUEST
   )
 }

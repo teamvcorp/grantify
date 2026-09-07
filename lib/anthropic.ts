@@ -8,21 +8,34 @@ import Anthropic from '@anthropic-ai/sdk'
  * must never be imported into a client component (the key would leak into the
  * browser bundle).
  *
- * MODEL CHOICE: the spec pinned claude-sonnet-4-6 (good cost/quality for
- * high-volume grant generation). It's a single constant here so you can switch
- * to claude-opus-4-8 (more capable) by changing one line or the env var.
+ * MODEL CHOICE: claude-sonnet-5 (was claude-sonnet-4-6). Sonnet 5 reaches
+ * roughly the previous Opus tier on agentic work at a LOWER per-token price
+ * ($2/$10 per 1M vs $3/$15) — but it uses the newer tokenizer, which produces
+ * ~30% more tokens for the same text, so real spend is roughly a wash rather
+ * than a 33% saving. Every route's `max_tokens` was raised ~30% to match.
+ *
+ * It's a single constant so you can switch to claude-opus-5 (more capable,
+ * $5/$25) via ANTHROPIC_MODEL. IMPORTANT: any model you switch to must have a
+ * price entry in lib/credits.ts — an unpriced model falls back to the most
+ * expensive known rate, which overcharges rather than silently eating margin.
+ *
+ * Opus 5 caveat: five routes run `thinking: {type:'disabled'}`. On Opus 5 that
+ * combination can make the model write a tool call as PLAIN TEXT instead of a
+ * real tool_use block — the turn "succeeds" and the search never runs. Move
+ * those routes to `{type:'adaptive'}` + a low/medium `output_config.effort`
+ * before pinning Opus 5.
  */
 
-export const GRANT_OS_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6'
+export const GRANT_OS_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
 
-/** Latest web search tool variant (dynamic filtering) — supported on Sonnet 4.6. */
+/** Latest web search tool variant (dynamic filtering) — Sonnet 5 / Sonnet 4.6 / Opus 4.6+. */
 export const WEB_SEARCH_TOOL = {
   type: 'web_search_20260209' as const,
   name: 'web_search' as const,
 }
 
 /**
- * Web fetch tool (dynamic filtering) — supported on Sonnet 4.6 / Opus 4.6+.
+ * Web fetch tool (dynamic filtering) — Sonnet 5 / Sonnet 4.6 / Opus 4.6+.
  * Lets the model open a specific URL and read the page, so it can VERIFY a
  * discovered grant against its real source instead of trusting search snippets.
  * See docs/anthropic-web-tools.md.

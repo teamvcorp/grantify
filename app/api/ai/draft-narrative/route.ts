@@ -111,7 +111,7 @@ Write the narrative now.`
       try {
         const aiStream = client.messages.stream({
           model: GRANT_OS_MODEL,
-          max_tokens: 8000,
+          max_tokens: 12000,
           // Stream clean prose — no thinking blocks interleaved.
           thinking: { type: 'disabled' },
           messages: [{ role: 'user', content: prompt }],
