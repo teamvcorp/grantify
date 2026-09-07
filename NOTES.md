@@ -447,6 +447,45 @@ Same root cause as #1 above. `app/api/cron/funding-stats/route.ts` queried
 while the cron appeared to succeed. Now runs `posted` and `forecasted` as two calls and sums them.
 Worth a manual cron trigger to backfill real numbers.
 
+## AI discovery split into two phases (2026-09-07)
+
+**Reported:** discovery failed with a raw `HTTP 504 — the request timed out` and returned nothing.
+
+**Cause:** a platform timeout, not our 504 (ours returns JSON with a friendly `error`; the client
+showed its generic fallback, which only fires on a non-JSON body). The org is on **Vercel Pro**, so
+`maxDuration = 300` WAS honoured — one request genuinely burned a full 5 minutes doing a web search
+plus six `web_fetch` verifications inline. 300s is the cap, so raising it isn't an option: the work
+had to be split.
+
+**New shape — one candidate at a time, so a timeout costs one lead instead of the whole run:**
+- `POST /api/ai/discover` — PHASE 1, **search only** (`web_search`, no fetch), returns
+  `{candidates:[{name,funder,url}], skipped_count}`. Fast. Dedupes against already-imported grants
+  BEFORE any verification is paid for.
+- `POST /api/ai/discover/verify` — PHASE 2, verifies **ONE** candidate (`web_fetch`, max_uses 2),
+  runs the qualification gate, returns `{verified:true,grant}` or `{verified:false,reason}`.
+  `maxDuration = 120`. An unconfirmable candidate is a normal 200 outcome, not an error.
+- Client (`grant-search.tsx`) calls phase 1, then loops phase 2 **sequentially**, appending each
+  verified grant to the list as it lands and showing "N of M checked". A failed candidate increments
+  the excluded count and the loop continues; on any error the partial results are KEPT.
+- `lib/discovery.ts` — shared schemas + `qualifyOne`, `isLive`, `loadExistingKeys`,
+  `loadOrgContext`, so the two routes don't duplicate the qualification contract.
+
+**SECURITY — new SSRF boundary.** Phase 2 takes the candidate URL from the CLIENT, and the server
+fetches it in `isLive()`. `isFetchableUrl()` now blocks non-http(s), localhost/.local, and private
+/loopback/link-local/CGNAT/multicast addresses, resolving hostnames via DNS first (every resolved
+address must be public). Without it a caller could point us at `169.254.169.254` (cloud metadata)
+and use the server as a probe. **Verified with 21 cases** — including the bypass the first
+implementation had: Node normalizes `[::ffff:127.0.0.1]` to the hex form `::ffff:7f00:1`, which the
+dotted-quad check missed. Decimal (`2130706433`), hex (`0x7f000001`) and octal (`0177.0.0.1`) IP
+spellings are all covered too.
+
+**Cost note:** this is now 1 + N Claude calls instead of 1, each charged via `chargeUsage`. Slightly
+more overhead per run (each verify call re-sends org context), but the run actually completes.
+
+**Untested against the live API** — `.env.local` has no `ANTHROPIC_API_KEY` in this checkout, so the
+two-phase flow has never been exercised end to end. The SSRF guard, typecheck, lint and build are
+verified; the Claude round-trips are not.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

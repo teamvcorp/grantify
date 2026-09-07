@@ -113,6 +113,8 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
   const [aiError, setAiError] = useState<string | null>(null)
   const [aiResults, setAiResults] = useState<AiResult[] | null>(null)
   const [aiExcluded, setAiExcluded] = useState(0)
+  // Verification progress, so a multi-minute run isn't a blank spinner.
+  const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => {
     fetch('/api/purposes')
@@ -196,38 +198,89 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
     void doSearch(0, q)
   }
 
+  /**
+   * Discovery runs in TWO phases so results arrive one at a time.
+   *
+   * Phase 1 is a fast search-only shortlist. Phase 2 verifies each candidate in
+   * its own short request, and every verified grant is appended to the list the
+   * moment it lands. Previously this was a single request that verified all six
+   * inline — it exceeded Vercel's 300s cap, the platform killed it, and the run
+   * returned NOTHING. Now a failure costs one candidate, not the whole run.
+   */
   async function runDiscovery() {
     if (!purposeId) return
     setAiLoading(true)
     setAiError(null)
+    setAiResults([]) // start empty so verified grants can stream in
+    setAiExcluded(0)
+    setAiProgress(null)
+
+    // Read as text first: a platform 5xx (e.g. timeout) returns a non-JSON body,
+    // which res.json() would choke on with a confusing parse error.
+    async function readJson(res: Response) {
+      const text = await res.text()
+      try {
+        return text ? JSON.parse(text) : null
+      } catch {
+        return null
+      }
+    }
+
     try {
+      // PHASE 1 — shortlist.
       const res = await fetch('/api/ai/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ purpose_id: purposeId }),
       })
-      // Read as text first: a platform 5xx (e.g. timeout) returns a non-JSON
-      // body, which res.json() would choke on with a confusing parse error.
-      const text = await res.text()
-      let data: { error?: string; results?: AiResult[]; excluded_count?: number } | null = null
-      try {
-        data = text ? JSON.parse(text) : null
-      } catch {
-        data = null
-      }
+      const data: {
+        error?: string
+        candidates?: { name: string; funder: string; url: string }[]
+        skipped_count?: number
+      } | null = await readJson(res)
+
       if (!res.ok || !data) {
         throw new Error(
           data?.error ||
-            `Discovery failed (HTTP ${res.status})${res.status === 504 ? ' — the request timed out.' : ''}.`
+            `Search failed (HTTP ${res.status})${res.status === 504 ? ' — the request timed out.' : ''}.`
         )
       }
-      setAiResults(data.results ?? [])
-      setAiExcluded(data.excluded_count ?? 0)
+
+      const candidates = data.candidates ?? []
+      let excluded = data.skipped_count ?? 0
+      setAiExcluded(excluded)
+      if (candidates.length === 0) return
+
+      // PHASE 2 — verify one at a time, rendering each result as it completes.
+      for (let i = 0; i < candidates.length; i++) {
+        setAiProgress({ done: i, total: candidates.length })
+        try {
+          const vres = await fetch('/api/ai/discover/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ purpose_id: purposeId, candidate: candidates[i] }),
+          })
+          const vdata: { verified?: boolean; grant?: AiResult } | null = await readJson(vres)
+          if (vres.ok && vdata?.verified && vdata.grant) {
+            const grant = vdata.grant
+            setAiResults((prev) => [...(prev ?? []), grant])
+          } else {
+            excluded += 1
+            setAiExcluded(excluded)
+          }
+        } catch {
+          // One candidate failing must never abort the rest of the run.
+          excluded += 1
+          setAiExcluded(excluded)
+        }
+        setAiProgress({ done: i + 1, total: candidates.length })
+      }
     } catch (err) {
+      // Keep whatever already arrived — partial results are the whole point.
       setAiError(err instanceof Error ? err.message : 'Discovery failed.')
-      setAiResults(null)
     } finally {
       setAiLoading(false)
+      setAiProgress(null)
     }
   }
 
@@ -459,11 +512,20 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
 
         {aiLoading && (
           <p className="text-sm text-muted-foreground">
-            Searching, opening funder pages, and verifying each match — this can take a minute or
-            two…
+            {aiProgress
+              ? `Opening funder pages and verifying — ${aiProgress.done} of ${aiProgress.total} checked. Matches appear below as they’re confirmed.`
+              : 'Searching for candidate funders…'}
           </p>
         )}
-        {aiError && <p className="text-sm text-destructive">{aiError}</p>}
+        {/* Partial results survive a failure, so show both together. */}
+        {aiError && (
+          <p className="text-sm text-destructive">
+            {aiError}
+            {aiResults && aiResults.length > 0
+              ? ' Matches already verified are kept below.'
+              : ''}
+          </p>
+        )}
 
         {aiResults && aiResults.length > 0 && (
           <p className="text-sm text-muted-foreground">
@@ -533,7 +595,9 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
           })}
         </div>
 
-        {aiResults && aiResults.length === 0 && (
+        {/* `aiResults` is emptied at the START of a run so results can stream in,
+            so this must not fire while verification is still in progress. */}
+        {aiResults && aiResults.length === 0 && !aiLoading && !aiError && (
           <p className="text-sm text-muted-foreground">
             No strong matches found. Try refining the purpose&apos;s focus areas or geography.
           </p>
