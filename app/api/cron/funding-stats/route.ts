@@ -27,12 +27,18 @@ export async function GET(req: Request) {
 
   for (const c of FUNDING_CATEGORIES) {
     try {
-      const data = await searchGrantsGov({
-        fundingCategories: c.code,
-        oppStatuses: 'forecasted,posted',
-        rows: 1,
-      })
-      const amount = data.hitCount * c.avgAward
+      // BUG FIX (2026-09-07): this used oppStatuses:'forecasted,posted'. Comma
+      // lists make Grants.gov return ZERO — silently, with no error — so every
+      // category stored open_count 0 / amount 0, getFundingStats() filtered them
+      // all out, and the landing hero has been serving DEFAULT_FUNDING_STATS
+      // since this cron shipped. One status per request, summed.
+      const [posted, forecasted] = await Promise.all([
+        searchGrantsGov({ fundingCategories: c.code, oppStatuses: 'posted', rows: 1 }),
+        searchGrantsGov({ fundingCategories: c.code, oppStatuses: 'forecasted', rows: 1 }),
+      ])
+      const hitCount = posted.hitCount + forecasted.hitCount
+      const data = { hitCount }
+      const amount = hitCount * c.avgAward
       await col.updateOne(
         { category: c.code },
         {

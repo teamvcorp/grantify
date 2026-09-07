@@ -8,6 +8,11 @@ import { Badge } from '@/components/catalyst/badge'
 import { Select } from '@/components/catalyst/select'
 import { Search, Loader2, ExternalLink, Sparkles, Plus, Check } from 'lucide-react'
 import { funderColor } from '@/lib/ui'
+import {
+  GRANTS_GOV_CATEGORIES,
+  GRANTS_GOV_ELIGIBILITIES,
+  DEFAULT_ELIGIBILITY,
+} from '@/lib/grantsgov-codes'
 
 interface SearchResult {
   grantsgov_id: string
@@ -40,6 +45,25 @@ interface AiResult {
   summary: string
 }
 
+/** Exactly what was sent for one federal search, so paging can replay it. */
+interface FederalQuery {
+  purpose_id?: string
+  keyword?: string
+  eligibilities?: string
+  fundingCategories?: string
+}
+
+/** What the server actually ran — echoed back so the refinement is visible. */
+interface AppliedQuery {
+  keyword: string
+  fundingCategories: string | null
+  eligibilities: string | null
+  notes: string[]
+  /** Offered, not applied — forcing a category collapses results. See the route. */
+  suggested_category: string | null
+  suggested_category_label: string | null
+}
+
 /** Grants.gov page size — must match the offset math used for pagination. */
 const ROWS = 25
 
@@ -70,14 +94,19 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
 
   // Federal (Grants.gov) search.
   const [keyword, setKeyword] = useState('')
+  // Single-valued by API constraint — Grants.gov returns ZERO for a comma list.
+  const [eligibility, setEligibility] = useState(DEFAULT_ELIGIBILITY)
+  const [category, setCategory] = useState('') // '' = derive from the purpose
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [hitCount, setHitCount] = useState(0)
-  // 0-based page and the keyword that produced the current results, so Prev/Next
-  // re-query the same search regardless of later edits to the input box.
+  // What the server actually ran, so the refinement is visible rather than magic.
+  const [applied, setApplied] = useState<AppliedQuery | null>(null)
+  // 0-based page and the exact query that produced the current results, so
+  // Prev/Next re-run the same search regardless of later edits to the controls.
   const [page, setPage] = useState(0)
-  const [submittedKeyword, setSubmittedKeyword] = useState('')
+  const [submittedQuery, setSubmittedQuery] = useState<FederalQuery | null>(null)
 
   // AI (Claude) discovery.
   const [aiLoading, setAiLoading] = useState(false)
@@ -115,8 +144,9 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
   }
 
   // Run one page of the federal search. `pageArg` is 0-based; the offset sent to
-  // Grants.gov is pageArg * ROWS (startRecordNum).
-  async function doSearch(pageArg: number, kw: string) {
+  // Grants.gov is pageArg * ROWS (startRecordNum). `q` is the frozen query so
+  // paging can't drift when the controls are edited mid-browse.
+  async function doSearch(pageArg: number, q: FederalQuery) {
     setLoading(true)
     setError(null)
     try {
@@ -124,7 +154,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          keyword: kw || undefined,
+          ...q,
           rows: ROWS,
           startRecordNum: pageArg * ROWS,
         }),
@@ -133,10 +163,12 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       if (!res.ok) throw new Error(data.error || 'Search failed.')
       setResults(data.results)
       setHitCount(data.hitCount)
+      setApplied(data.applied ?? null)
       setPage(pageArg)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed.')
       setResults(null)
+      setApplied(null)
     } finally {
       setLoading(false)
     }
@@ -144,9 +176,24 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
 
   function runSearch(e: React.FormEvent) {
     e.preventDefault()
-    const kw = keyword.trim()
-    setSubmittedKeyword(kw)
-    void doSearch(0, kw) // a new search always starts on the first page
+    // The purpose drives the query; the keyword box is an optional override and
+    // the two filters are single-valued (a comma makes Grants.gov return zero).
+    const q: FederalQuery = {
+      purpose_id: purposeId || undefined,
+      keyword: keyword.trim() || undefined,
+      eligibilities: eligibility || undefined,
+      fundingCategories: category || undefined,
+    }
+    setSubmittedQuery(q)
+    void doSearch(0, q) // a new search always starts on the first page
+  }
+
+  /** Apply the server's suggested category as a one-click narrowing. */
+  function narrowToCategory(code: string) {
+    const q: FederalQuery = { ...(submittedQuery ?? {}), fundingCategories: code }
+    setCategory(code)
+    setSubmittedQuery(q)
+    void doSearch(0, q)
   }
 
   async function runDiscovery() {
@@ -210,9 +257,9 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
 
   return (
     <div className="space-y-8">
-      {/* Shared target purpose for import + AI discovery */}
+      {/* The purpose drives the federal query AND is the import/discovery target. */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-muted-foreground">Import into:</span>
+        <span className="text-sm text-muted-foreground">Purpose:</span>
         <Select
           value={purposeId}
           onChange={(e) => setPurposeId(e.target.value)}
@@ -233,20 +280,81 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
 
       {/* Federal search */}
       <section className="space-y-4">
-        <form onSubmit={runSearch} className="flex gap-2">
-          <Input
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder="Search federal grants (e.g. affordable housing, education equity)"
-            className="max-w-xl"
-          />
-          <Button type="submit" disabled={loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-            Search
-          </Button>
+        <form onSubmit={runSearch} className="space-y-3">
+          <div className="flex gap-2">
+            <Input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder={
+                purposeId
+                  ? 'Optional — overrides the purpose’s focus areas'
+                  : 'Search federal grants (e.g. affordable housing, education equity)'
+              }
+              className="max-w-xl"
+            />
+            <Button type="submit" disabled={loading}>
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              Search
+            </Button>
+          </div>
+
+          {/* Both filters are SINGLE-valued: Grants.gov returns zero results for
+              a comma-separated list, so these are dropdowns, not multi-selects. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={eligibility}
+              onChange={(e) => setEligibility(e.target.value)}
+              aria-label="Eligibility"
+              className="sm:w-80"
+            >
+              <option value="">Any eligibility</option>
+              {Object.entries(GRANTS_GOV_ELIGIBILITIES).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              aria-label="Funding category"
+              className="sm:w-72"
+            >
+              <option value="">
+                {purposeId ? 'Category: from purpose' : 'Any category'}
+              </option>
+              {Object.entries(GRANTS_GOV_CATEGORIES).map(([code, label]) => (
+                <option key={code} value={code}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </div>
         </form>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {/* Show WHY these results came back — the query is derived, not typed. */}
+        {applied && applied.notes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>Refined by purpose — {applied.notes.join(' · ')}</span>
+            {applied.suggested_category && !applied.fundingCategories && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={loading}
+                onClick={() => narrowToCategory(applied.suggested_category!)}
+              >
+                Narrow to {applied.suggested_category_label}
+              </Button>
+            )}
+          </div>
+        )}
+
         {results && results.length > 0 && (
           <p className="text-sm text-muted-foreground">
             {hitCount.toLocaleString()} matches on Grants.gov — showing{' '}
@@ -305,7 +413,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
               variant="outline"
               size="sm"
               disabled={loading || page === 0}
-              onClick={() => doSearch(page - 1, submittedKeyword)}
+              onClick={() => submittedQuery && doSearch(page - 1, submittedQuery)}
             >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               Previous
@@ -317,7 +425,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
               variant="outline"
               size="sm"
               disabled={loading || (page + 1) * ROWS >= hitCount}
-              onClick={() => doSearch(page + 1, submittedKeyword)}
+              onClick={() => submittedQuery && doSearch(page + 1, submittedQuery)}
             >
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               Next
