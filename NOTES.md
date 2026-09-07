@@ -482,9 +482,37 @@ spellings are all covered too.
 **Cost note:** this is now 1 + N Claude calls instead of 1, each charged via `chargeUsage`. Slightly
 more overhead per run (each verify call re-sends org context), but the run actually completes.
 
-**Untested against the live API** — `.env.local` has no `ANTHROPIC_API_KEY` in this checkout, so the
-two-phase flow has never been exercised end to end. The SSRF guard, typecheck, lint and build are
-verified; the Claude round-trips are not.
+**VERIFIED LIVE** (2026-09-07, real API key, `claude-sonnet-5`): phase 1 **8.2s** → 6 candidates;
+phase 2 **8.1s** → verified, schema OK, qualification gate PASSED with real eligibility text. A
+6-candidate run is now ~56s across 7 short requests. A later run also confirmed the gate correctly
+EXCLUDES a real grant whose deadline has passed.
+
+## ROOT CAUSE of the discovery timeouts: the dynamic web-tool variants (2026-09-07)
+
+The two-phase split above helped, but it was treating a symptom. Measured with a real key, same
+prompt, `claude-sonnet-5`:
+
+| Tool variant | Time |
+|---|---|
+| `web_search_20250305` (basic) | **7.6s** |
+| `web_search_20260209` (dynamic) | **315.3s** |
+| `web_search_20260209` (dynamic), max_uses 2 | 331.6s — `max_uses` is NOT the lever |
+| `web_fetch_20250910` (basic) | **5.7s** |
+| `web_fetch_20260209` (dynamic) | 20.8s |
+
+**The dynamic-filtering variants are ~40x slower for search** because they run code execution in a
+container under the hood — the same container that caused the `container_id` bug. That one line in
+`lib/anthropic.ts` is why discovery blew past Vercel's 300s cap and returned nothing.
+
+`WEB_SEARCH_TOOL` / `WEB_FETCH_TOOL` now use the **basic** variants. We do our own verification and
+qualification anyway, so the dynamic filtering bought little for that latency. Full evidence in
+`docs/anthropic-web-tools.md`. **Keep the `container` handling in the resume loops** — it is inert
+with the basic variants but required if anyone switches back.
+
+Phase-1 prompt also gained **URL RULES** after a live run returned `instrumentl.com` aggregator
+links and one mis-attributed funder (a lego.com page credited to Texas Workforce Commission). It now
+requires the funder's own domain and rejects aggregators/listing sites; the re-run returned 4/4 real
+funder domains (societyforscience.org, twc.texas.gov, greatertexasfoundation.org, tea.texas.gov).
 
 ## Status — what's next (still deferred)
 

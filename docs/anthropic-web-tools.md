@@ -4,19 +4,45 @@ Local copy so we don't re-research. Server-side (Anthropic-hosted) tools used by
 `/api/ai/discover`. Sourced from the Anthropic API docs / claude-api skill.
 Current as of 2026-09. Model in this repo: `claude-sonnet-5` (`GRANT_OS_MODEL`).
 
-## Tool type strings (current)
+## Tool type strings — WE USE THE BASIC VARIANTS ON PURPOSE
 
-| Tool | Current type | Name | Notes |
+| Tool | Type we use | Name | Why |
 |---|---|---|---|
-| Web search | `web_search_20260209` | `web_search` | "Dynamic filtering" variant. On Sonnet 5 / Sonnet 4.6 / Opus 4.6+. Older models: `web_search_20250305`. On Vertex only the basic variant is available. |
-| Web fetch | `web_fetch_20260209` | `web_fetch` | Opens a specific URL and reads the page. On Sonnet 5 / Sonnet 4.6 / Opus 4.6+. No web_fetch on Vertex. |
+| Web search | `web_search_20250305` | `web_search` | **~40x faster** than the dynamic variant. See the latency table below. |
+| Web fetch | `web_fetch_20250910` | `web_fetch` | ~3.6x faster than the dynamic variant, same answer quality in testing. |
+
+The newer "dynamic filtering" variants (`web_search_20260209` / `web_fetch_20260209`) exist and
+work on Sonnet 5 / Sonnet 4.6 / Opus 4.6+, but they run **code execution in a container** under the
+hood — and we pay for that container in latency on every single call.
+
+### Measured on claude-sonnet-5, 2026-09-07 (identical prompt)
+
+| Tool variant | Time | Notes |
+|---|---|---|
+| `web_search_20250305` (basic), max_uses 5 | **7.6s** | 2 searches, 6 usable results |
+| `web_search_20250305` (basic), max_uses 2 | **7.7s** | |
+| `web_search_20260209` (dynamic), max_uses 5 | **315.3s** | 4 searches |
+| `web_search_20260209` (dynamic), max_uses 2 | **331.6s** | `max_uses` is NOT the lever |
+| `web_fetch_20250910` (basic) | **5.7s** | read the page correctly |
+| `web_fetch_20260209` (dynamic) | **20.8s** | same conclusion, 3.6x the time |
+
+**This was the root cause of AI discovery timing out and returning nothing** — a single request blew
+past Vercel's 300s cap before producing any result. Lowering `max_uses` does not help; the cost is
+the variant itself.
+
+We run our own verification (`web_fetch` the funder page) plus a server-side qualification gate
+(`lib/discovery.ts`), so the dynamic variants' extra filtering buys little for that latency.
+
+**If you switch back**, keep the `container` handling in the pause_turn resume loops — the dynamic
+variants require it (next section). The basic variants don't use a container, so with today's
+config that code is inert but correct.
 
 Both are defined once in `lib/anthropic.ts` (`WEB_SEARCH_TOOL`, `WEB_FETCH_TOOL`)
 and spread with a `max_uses` cap at the call site.
 
 ```ts
-export const WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search' }
-export const WEB_FETCH_TOOL  = { type: 'web_fetch_20260209',  name: 'web_fetch'  }
+export const WEB_SEARCH_TOOL = { type: 'web_search_20250305', name: 'web_search' }
+export const WEB_FETCH_TOOL  = { type: 'web_fetch_20250910',  name: 'web_fetch'  }
 
 const tools = [
   { ...WEB_SEARCH_TOOL, max_uses: 5 },        // cap total searches (latency)
@@ -33,7 +59,7 @@ const tools = [
 - `user_location` (web_search) — biases results geographically. Not used.
 - `max_content_tokens` (web_fetch) — cap tokens pulled from a fetched page.
 
-## Server-tool turn loop (`pause_turn`) — MUST pass the container id
+## Server-tool turn loop (`pause_turn`) — MUST pass the container id (dynamic variants)
 
 Server tools run on Anthropic's side mid-turn. The API may return
 `stop_reason: "pause_turn"`; you must re-send the accumulated assistant turn to

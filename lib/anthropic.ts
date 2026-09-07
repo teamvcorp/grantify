@@ -28,20 +28,44 @@ import Anthropic from '@anthropic-ai/sdk'
 
 export const GRANT_OS_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
 
-/** Latest web search tool variant (dynamic filtering) — Sonnet 5 / Sonnet 4.6 / Opus 4.6+. */
+/**
+ * WEB SEARCH — deliberately the BASIC variant, not the newer dynamic-filtering
+ * one. MEASURED on claude-sonnet-5, 2026-09-07, identical prompt and max_uses:
+ *
+ *   web_search_20250305 (basic)    →   7.6s
+ *   web_search_20260209 (dynamic)  → 315.3s      (~40x slower)
+ *
+ * `max_uses` made no difference to the dynamic variant (2 uses: 331s), so the
+ * cost is the variant itself: dynamic filtering runs code execution in a
+ * container under the hood, and we pay for that container on every call.
+ *
+ * That single line was the root cause of AI discovery timing out and returning
+ * nothing — it blew past Vercel's 300s cap before any result could be produced.
+ * We do our own verification and qualification gate anyway (see lib/discovery.ts),
+ * so the dynamic variant's extra filtering buys us little for 40x the latency.
+ *
+ * If you ever switch back, keep the `container` handling in the pause_turn
+ * resume loops — the dynamic variants require it. See docs/anthropic-web-tools.md.
+ */
 export const WEB_SEARCH_TOOL = {
-  type: 'web_search_20260209' as const,
+  type: 'web_search_20250305' as const,
   name: 'web_search' as const,
 }
 
 /**
- * Web fetch tool (dynamic filtering) — Sonnet 5 / Sonnet 4.6 / Opus 4.6+.
+ * WEB FETCH — basic variant, for the same reason as WEB_SEARCH_TOOL above.
  * Lets the model open a specific URL and read the page, so it can VERIFY a
  * discovered grant against its real source instead of trusting search snippets.
+ *
+ * MEASURED on claude-sonnet-5, 2026-09-07, same page and prompt:
+ *   web_fetch_20250910 (basic)    →  5.7s
+ *   web_fetch_20260209 (dynamic)  → 20.8s        (~3.6x slower)
+ * Both read the page correctly and both reached the same conclusion about it.
+ *
  * See docs/anthropic-web-tools.md.
  */
 export const WEB_FETCH_TOOL = {
-  type: 'web_fetch_20260209' as const,
+  type: 'web_fetch_20250910' as const,
   name: 'web_fetch' as const,
 }
 

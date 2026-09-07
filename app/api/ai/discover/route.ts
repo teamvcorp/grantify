@@ -79,7 +79,12 @@ PURPOSE
 
 SCOPE: Prioritize FOUNDATION, STATE, CORPORATE, and other private funders. Federal grants are covered by a separate Grants.gov search — only include a federal grant if it is an unusually strong match. Respect the geography constraint and the organization's eligibility.
 
-METHOD (do this for real — do not skip): use web_search to find real, currently-open programs that match the purpose. Each result must be a program you actually saw in search results, with the funder's own page as the URL. Do NOT invent funders or URLs, and do NOT guess a URL pattern. Prefer the specific program page over a funder's homepage.
+METHOD (do this for real — do not skip): use web_search to find real, currently-open programs that match the purpose. Each result must be a program you actually saw in search results. Do NOT invent funders or URLs, and do NOT guess a URL pattern.
+
+URL RULES (important):
+- The URL must be on the FUNDER'S OWN WEBSITE. Never return a grant-aggregator or listing site (for example instrumentl.com, grantwatch.com, grants.gov listings, foundation directories, news articles or blog round-ups) — if that is the only place you saw it, search again for the funder's own page, and drop the candidate if you cannot find one.
+- Prefer the specific program/application page over the funder's homepage.
+- "funder" must be the organization that actually gives the money, matching the site the URL points to. If the page belongs to a different organization than the funder you named, you have the wrong URL.
 
 This is a SHORTLISTING pass only — another step will open each page and verify the details, so do NOT try to confirm deadlines or eligibility now. Be fast.
 
