@@ -700,6 +700,75 @@ AI route already reads the KB for org context, that also improves narratives, LO
    the compiler only because the parameter was added. Both call sites now wrap in an arrow. Worth
    remembering: never pass a multi-arg function directly to `.map`.
 
+## Bot-proofing public signup and login (2026-09-29)
+
+Public surface is small — only `/register`, the NextAuth credentials endpoint, the Stripe webhook
+(signature-verified) and the cron route (CRON_SECRET). So the abuse vectors are **fake account
+creation** and **credential brute force**. Both are now defended.
+
+### Registration — four independent layers
+
+No single check is strong alone; a bot has to beat all four.
+
+1. **Honeypot** (`company_website`) — already existed.
+2. **Signed timing token** (`lib/form-token.ts`) — the form carries an HMAC-signed timestamp minted
+   at render. Rejects instant submits (`too-fast`, under 2.5s) and direct POSTs that never loaded
+   the page (`missing`). Signed with AUTH_SECRET so a bot can't backdate it — verified that a real
+   signature replayed against a different timestamp is rejected.
+3. **IP rate limit** (`lib/rate-limit.ts`) — 3/hour and 10/day per IP. Safe to set this low because
+   registration creates a NEW ORG; team members arrive by invite, so one office never needs many.
+4. **Disposable-email block** — a short, curated list of high-volume throwaway providers (plus the
+   `mail.yopmail.com` subdomain trick). Deliberately not exhaustive: a huge list goes stale and
+   risks blocking a real nonprofit.
+
+Every bot rejection returns the SAME generic message so a script can't tell which layer caught it
+and tune around it; the real reason is logged. Two exceptions return something actionable because
+they are honest user situations: an expired token ("refresh and try again") and a disposable address
+("use your organization email").
+
+**`/register` MUST stay `force-dynamic`.** The token is minted at render, so a prerendered page
+would hand every visitor one stale token and, six hours after deploy, reject EVERY signup as
+expired. Verified in the build output: `ƒ /register`.
+
+### Login — brute-force throttling in `authorize()`, not the server action
+
+Enforced inside `authorize` on purpose: anything can POST straight to
+`/api/auth/callback/credentials`, so a limit in the login server action alone is trivially bypassed.
+
+- Only **failures** count; a success clears the account counter. Counting every attempt would
+  throttle a shared office IP for signing in normally.
+- 20 failures / 15 min per IP, 10 per account-from-one-IP.
+- The per-account key **includes the IP on purpose**. Keying on email alone would let anyone lock a
+  known user out of their own account by spamming bad passwords — turning the defence into a DoS
+  against your own customer.
+- When the IP can't be determined, the IP-wide limit is SKIPPED (everyone would share one bucket
+  and throttle each other); the per-account limit still applies.
+- A throttled login returns the same generic failure — never confirm that an account exists or that
+  a lockout is active.
+
+### The rate limiter FAILS OPEN, deliberately
+
+`lib/rate-limit.ts` is Mongo-backed (fixed windows, TTL index, so it self-cleans and needs no new
+infrastructure). If Mongo is slow or unreachable it **allows** the request and logs. A limiter that
+failed closed on a database blip would lock every real user out of sign-in — a self-inflicted
+outage far worse than the abuse it prevents.
+
+Known trade: fixed windows allow a burst across a boundary (up to 2x over two adjacent windows).
+Accepted for the simplicity; the limits are low enough that the burst is harmless.
+
+### NOT done, on purpose
+
+- **Email verification.** The strongest anti-fake-account measure, but it gates real users behind a
+  working mailbox and needs a token, a verify page and a resend path. Shipping that unattended
+  risks locking out legitimate signups. Resend is already configured, so it is the natural next
+  step — do it while awake.
+- **CAPTCHA / Cloudflare Turnstile.** Needs an account and keys that only the owner can create. The
+  four layers above are the no-new-dependency defence; Turnstile is the upgrade if real abuse shows
+  up in the logs (grep for `[register] blocked:`).
+
+Tested: 20 assertions covering token forgery/replay/timing, disposable domains, and live rate-limit
+increment/peek/reset behaviour — all passing.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

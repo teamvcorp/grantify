@@ -5,6 +5,27 @@ import { z } from 'zod'
 import type { Provider } from 'next-auth/providers'
 import { users } from './collections'
 import { verifyPassword } from './password'
+import { checkRateLimit, getClientIp, peekRateLimit, resetRateLimit } from './rate-limit'
+
+/**
+ * Credential brute-force throttling.
+ *
+ * Enforced inside `authorize` on purpose: the login server action is NOT the
+ * only way in — anything can POST straight to /api/auth/callback/credentials,
+ * so a limit in the action alone would be trivially bypassed.
+ *
+ * Only FAILURES are counted, and a success clears the counter. Counting every
+ * attempt would throttle a shared office IP for signing in normally.
+ *
+ * The per-account key deliberately includes the IP. Keying on the email alone
+ * would let anyone lock a known user out of their own account by spamming bad
+ * passwords — turning a defence into a denial-of-service against your customer.
+ */
+const LOGIN_WINDOW_SECONDS = 15 * 60
+/** Per source IP across all accounts — catches spraying many emails. */
+const LOGIN_FAILS_PER_IP = 20
+/** Per account from one IP — generous, so real typos don't lock anyone out. */
+const LOGIN_FAILS_PER_ACCOUNT = 10
 
 /**
  * NextAuth v5 (Auth.js) configuration — the single source of auth truth.
@@ -45,12 +66,49 @@ const providers: Provider[] = [
       if (!parsed.success) return null
       const { email, password } = parsed.data
 
+      // Throttle BEFORE touching the database or hashing, so a flood costs us
+      // as little as possible.
+      const ip = await getClientIp()
+      const ipKey = `login:fail:ip:${ip}`
+      const acctKey = `login:fail:acct:${email}:${ip}`
+      // When the IP can't be determined every caller collapses into one bucket,
+      // so an IP-wide limit would throttle unrelated real users. Fall back to
+      // the per-account limit only rather than punishing everyone together.
+      const haveIp = ip !== 'unknown'
+      const [ipOk, acctOk] = await Promise.all([
+        haveIp
+          ? peekRateLimit(ipKey, LOGIN_FAILS_PER_IP, LOGIN_WINDOW_SECONDS)
+          : Promise.resolve({ allowed: true, remaining: 0, retryAfterSeconds: 0 }),
+        peekRateLimit(acctKey, LOGIN_FAILS_PER_ACCOUNT, LOGIN_WINDOW_SECONDS),
+      ])
+      if (!ipOk.allowed || !acctOk.allowed) {
+        console.warn(`[auth] login throttled for ${ip}`)
+        // Same generic failure as a bad password — never confirm that an
+        // account exists or that a lockout is in effect.
+        return null
+      }
+
+      /** Count this failure, then fail. */
+      const fail = async () => {
+        await Promise.all([
+          haveIp
+            ? checkRateLimit(ipKey, LOGIN_FAILS_PER_IP, LOGIN_WINDOW_SECONDS)
+            : Promise.resolve(null),
+          checkRateLimit(acctKey, LOGIN_FAILS_PER_ACCOUNT, LOGIN_WINDOW_SECONDS),
+        ])
+        return null
+      }
+
       const col = await users()
       const user = await col.findOne({ email })
-      if (!user || !user.password_hash) return null
+      if (!user || !user.password_hash) return await fail()
 
       const ok = await verifyPassword(password, user.password_hash)
-      if (!ok) return null
+      if (!ok) return await fail()
+
+      // Clear the account counter so earlier typos don't leave this user one
+      // attempt away from a lockout for the rest of the window.
+      await resetRateLimit(acctKey, LOGIN_WINDOW_SECONDS)
 
       // Best-effort last_login stamp; don't fail the login if this write hiccups.
       await col
