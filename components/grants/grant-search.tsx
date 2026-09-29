@@ -59,6 +59,10 @@ interface AppliedQuery {
   fundingCategories: string | null
   eligibilities: string | null
   notes: string[]
+  /** The keyword actually used after the relaxation ladder ran. */
+  resolved_keyword?: string
+  /** True when the page was re-ranked client-side (Grants.gov has no relevance sort). */
+  ranked?: boolean
   /** Offered, not applied — forcing a category collapses results. See the route. */
   suggested_category: string | null
   suggested_category_label: string | null
@@ -167,6 +171,13 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       setHitCount(data.hitCount)
       setApplied(data.applied ?? null)
       setPage(pageArg)
+      // The server may have BROADENED the keyword (relaxation ladder). Pin the
+      // resolved one so Prev/Next replay this exact search instead of
+      // re-relaxing from scratch on every page.
+      const resolved: string | undefined = data.applied?.resolved_keyword
+      if (resolved && resolved !== q.keyword) {
+        setSubmittedQuery({ ...q, keyword: resolved })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed.')
       setResults(null)
@@ -247,34 +258,53 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       }
 
       const candidates = data.candidates ?? []
-      let excluded = data.skipped_count ?? 0
-      setAiExcluded(excluded)
+      // Seed the excluded count with what phase 1 already dropped (duplicates
+      // of grants you've imported). Workers increment it from here.
+      setAiExcluded(data.skipped_count ?? 0)
       if (candidates.length === 0) return
 
-      // PHASE 2 — verify one at a time, rendering each result as it completes.
-      for (let i = 0; i < candidates.length; i++) {
-        setAiProgress({ done: i, total: candidates.length })
-        try {
-          const vres = await fetch('/api/ai/discover/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ purpose_id: purposeId, candidate: candidates[i] }),
-          })
-          const vdata: { verified?: boolean; grant?: AiResult } | null = await readJson(vres)
-          if (vres.ok && vdata?.verified && vdata.grant) {
-            const grant = vdata.grant
-            setAiResults((prev) => [...(prev ?? []), grant])
-          } else {
-            excluded += 1
-            setAiExcluded(excluded)
+      // PHASE 2 — verify candidates CONCURRENTLY, rendering each as it lands.
+      // Each verification is an independent short request, so running them in
+      // parallel turns ~6 x 5s of dead time into roughly one round trip. The
+      // cap keeps us from hammering the API (and from burning the whole credit
+      // balance at once if a purpose ever yields many candidates).
+      const CONCURRENCY = 3
+      let nextIndex = 0
+      setAiProgress({ done: 0, total: candidates.length })
+
+      async function verifyWorker() {
+        for (;;) {
+          const i = nextIndex++
+          if (i >= candidates.length) return
+          try {
+            const vres = await fetch('/api/ai/discover/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ purpose_id: purposeId, candidate: candidates[i] }),
+            })
+            const vdata: { verified?: boolean; grant?: AiResult } | null = await readJson(vres)
+            if (vres.ok && vdata?.verified && vdata.grant) {
+              const grant = vdata.grant
+              setAiResults((prev) => [...(prev ?? []), grant])
+            } else {
+              setAiExcluded((n) => n + 1)
+            }
+          } catch {
+            // One candidate failing must never abort the rest of the run.
+            setAiExcluded((n) => n + 1)
           }
-        } catch {
-          // One candidate failing must never abort the rest of the run.
-          excluded += 1
-          setAiExcluded(excluded)
+          // Functional update: workers finish out of order, so never compute
+          // progress from a captured value.
+          setAiProgress((p) => ({
+            done: (p?.done ?? 0) + 1,
+            total: candidates.length,
+          }))
         }
-        setAiProgress({ done: i + 1, total: candidates.length })
       }
+
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, candidates.length) }, verifyWorker)
+      )
     } catch (err) {
       // Keep whatever already arrived — partial results are the whole point.
       setAiError(err instanceof Error ? err.message : 'Discovery failed.')

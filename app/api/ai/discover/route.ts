@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import {
   getAnthropic,
-  GRANT_OS_MODEL,
+  requestBaseFor,
   WEB_SEARCH_TOOL,
   textFromMessage,
   parseJsonFromText,
@@ -142,18 +142,18 @@ export async function POST(req: Request) {
     const messages: Parameters<typeof client.messages.create>[0]['messages'] = [
       { role: 'user', content: buildPrompt(purpose, org) },
     ]
+    // Model + thinking + effort for THIS task (see lib/anthropic.ts).
+    const base = requestBaseFor('discover')
     const createParams = {
-      model: GRANT_OS_MODEL,
+      ...base,
       max_tokens: 4000,
       // Thinking off: this is a fast shortlisting pass. The prompt's explicit
-      // METHOD block is what keeps the model reaching for web_search anyway.
-      thinking: { type: 'disabled' as const },
       tools: [{ ...WEB_SEARCH_TOOL, max_uses: 5 }],
       messages,
     }
 
     let response = await client.messages.create(createParams)
-    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
+    await chargeUsage(orgId, base.model, response.usage)
 
     // Server tools can pause the turn. The resume MUST carry the container id —
     // the dynamic-filtering web tools run code execution in a container, and
@@ -166,7 +166,7 @@ export async function POST(req: Request) {
         ...createParams,
         ...(containerId ? { container: containerId } : {}),
       })
-      await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
+      await chargeUsage(orgId, base.model, response.usage)
     }
     if (response.stop_reason === 'pause_turn') {
       return NextResponse.json(

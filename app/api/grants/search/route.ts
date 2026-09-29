@@ -8,6 +8,7 @@ import {
   parseGrantsGovDate,
   grantsGovUrl,
   buildFederalQueryFromPurpose,
+  relevanceScore,
   GRANTS_GOV_CATEGORIES,
   GRANTS_GOV_ELIGIBILITIES,
   type GrantsGovOppHit,
@@ -100,6 +101,10 @@ export async function POST(req: Request) {
   const fundingCategories = input.fundingCategories
   let suggestedCategory: string | null = null
   const notes: string[] = []
+  // Broader keywords to retry if the primary returns nothing, and the terms we
+  // re-rank the returned page against (both only exist for a purpose search).
+  let fallbackKeywords: string[] = []
+  let rankTerms: string[] = []
 
   // Derive the query from the Purpose unless the caller overrode a field.
   if (input.purpose_id) {
@@ -120,8 +125,10 @@ export async function POST(req: Request) {
       focus_areas: purpose.focus_areas ?? [],
       geography: purpose.geography,
     })
+    rankTerms = purpose.focus_areas ?? []
     if (!keyword) {
       keyword = derived.keyword
+      fallbackKeywords = derived.fallbackKeywords
       notes.push(...derived.notes)
     } else {
       notes.push('Using your keyword instead of the purpose’s focus areas')
@@ -148,25 +155,58 @@ export async function POST(req: Request) {
   }
 
   try {
-    const data = await searchGrantsGov({
-      keyword: keyword || undefined,
+    const common = {
       oppStatuses: input.oppStatuses,
       eligibilities: input.eligibilities,
       fundingCategories,
       agencies: input.agencies,
       rows: input.rows,
       startRecordNum: input.startRecordNum,
-    })
+    }
+
+    // RELAXATION LADDER. A quoted phrase is an EXACT match, so a very specific
+    // purpose can match nothing at all — measured: an AI-drafted purpose gave
+    // 0 hits where the naive keyword "youth programs" gave 3. Precision is
+    // worthless if the result set is empty, so walk to broader keywords until
+    // something comes back. Only runs when the caller did not pin a keyword.
+    let data = await searchGrantsGov({ keyword: keyword || undefined, ...common })
+    for (const fallback of fallbackKeywords) {
+      if (data.hitCount > 0) break
+      notes.push(`No matches for ${keyword} — broadened to ${fallback}`)
+      keyword = fallback
+      data = await searchGrantsGov({ keyword: fallback, ...common })
+    }
+
+    // RE-RANK the page we were given. Grants.gov has no relevance sort (results
+    // are date-ordered) and matches full text across the whole synopsis, so a
+    // grant that merely mentions a term sits alongside one that is about it.
+    // A term in the TITLE is the strongest fit signal available to us.
+    // NOTE: this re-orders the current page only — it cannot reach hits on
+    // later pages, because the API gives us no way to rank server-side.
+    const ranked =
+      rankTerms.length > 0
+        ? [...data.oppHits]
+            .map((h, i) => ({ h, i, s: relevanceScore(h.title, rankTerms) }))
+            // Stable: equal scores keep the API's original (date) order.
+            .sort((a, b) => (b.s - a.s) || (a.i - b.i))
+            .map((x) => x.h)
+        : data.oppHits
+
     return NextResponse.json({
       hitCount: data.hitCount,
       startRecord: data.startRecord,
-      results: data.oppHits.map(normalize),
+      results: ranked.map(normalize),
       // Echo what actually ran so the UI can show why these results came back.
       applied: {
         keyword,
         fundingCategories: fundingCategories ?? null,
         eligibilities: input.eligibilities ?? null,
         notes,
+        // Pin the RESOLVED keyword so paging replays the same search rather
+        // than re-running the relaxation ladder on every page.
+        resolved_keyword: keyword,
+        // Ranked client-side; say so rather than implying the API did it.
+        ranked: rankTerms.length > 0,
         // Offered as a one-click narrowing, deliberately not applied.
         suggested_category: suggestedCategory,
         suggested_category_label: suggestedCategory

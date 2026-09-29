@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { getAnthropic, GRANT_OS_MODEL, textFromMessage } from '@/lib/anthropic'
+import { getAnthropic, requestBaseFor, textFromMessage } from '@/lib/anthropic'
 import { grants } from '@/lib/collections'
 import { fetchGrantsGovOpportunity } from '@/lib/grantsgov'
 import { hasCredits, chargeUsage } from '@/lib/credits'
@@ -80,13 +80,14 @@ GRANT GUIDELINES:
 ${sourceText || '(no detailed guidelines on file — summarize at a high level from the funder name/type)'}`
 
     const client = getAnthropic()
+    // Model + thinking + effort for THIS task (see lib/anthropic.ts).
+    const base = requestBaseFor('funding-summary')
     const response = await client.messages.create({
-      model: GRANT_OS_MODEL,
+      ...base,
       max_tokens: 2000,
-      thinking: { type: 'disabled' },
       messages: [{ role: 'user', content: prompt }],
     })
-    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
+    await chargeUsage(orgId, base.model, response.usage)
 
     const summary = textFromMessage(response).trim()
     await grantsCol.updateOne(

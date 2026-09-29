@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, Sparkles } from 'lucide-react'
 import { FUNDER_TYPES } from '@/lib/schemas'
 import { cn } from '@/lib/utils'
 
@@ -56,6 +56,61 @@ export function PurposesManager() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // AI purpose assist (create only).
+  const [assistText, setAssistText] = useState('')
+  const [assisting, setAssisting] = useState(false)
+  const [assistError, setAssistError] = useState<string | null>(null)
+  const [assistNote, setAssistNote] = useState<string | null>(null)
+
+  /**
+   * Draft a Purpose from plain English. Fills the form rather than saving, so
+   * the user always reviews the focus areas — they decide search quality.
+   */
+  async function draftPurpose() {
+    setAssisting(true)
+    setAssistError(null)
+    setAssistNote(null)
+    try {
+      const res = await fetch('/api/ai/purpose-assist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: assistText.trim() }),
+      })
+      const text = await res.text()
+      let data: { error?: string; draft?: Record<string, unknown> } | null = null
+      try {
+        data = text ? JSON.parse(text) : null
+      } catch {
+        data = null
+      }
+      if (!res.ok || !data?.draft) {
+        throw new Error(data?.error || `Could not draft a purpose (HTTP ${res.status}).`)
+      }
+      const d = data.draft as {
+        name: string
+        description: string
+        focus_areas: string[]
+        geography: string
+        target_amount: number
+        grant_types: string[]
+        rationale?: string
+      }
+      setForm({
+        name: d.name,
+        description: d.description,
+        focus_areas: d.focus_areas.join(', '),
+        geography: d.geography,
+        target_amount: String(d.target_amount),
+        grant_types: d.grant_types,
+      })
+      setAssistNote(d.rationale || null)
+    } catch (err) {
+      setAssistError(err instanceof Error ? err.message : 'Could not draft a purpose.')
+    } finally {
+      setAssisting(false)
+    }
+  }
+
   async function load() {
     try {
       const res = await fetch('/api/purposes')
@@ -79,6 +134,9 @@ export function PurposesManager() {
     setEditingId(null)
     setForm(EMPTY_FORM)
     setFormError(null)
+    setAssistText('')
+    setAssistError(null)
+    setAssistNote(null)
     setOpen(true)
   }
 
@@ -221,6 +279,49 @@ export function PurposesManager() {
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* AI assist. Only offered on CREATE — on edit the user already has
+                values and silently overwriting them would be hostile.
+                This matters more than it looks: focus_areas are sent verbatim as
+                quoted search phrases to Grants.gov and drive AI discovery, so
+                this is where result quality is actually won or lost. */}
+            {!editingId && (
+              <div className="space-y-2 rounded-lg border border-dashed p-3">
+                <Label htmlFor="p-assist" className="flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" /> Describe it in plain English
+                </Label>
+                <Textarea
+                  id="p-assist"
+                  value={assistText}
+                  onChange={(e) => setAssistText(e.target.value)}
+                  placeholder="We run after-school robotics clubs for middle schoolers in low-income parts of Austin, and want about $75k to add two more sites."
+                  rows={3}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={assisting || assistText.trim().length < 10}
+                    onClick={draftPurpose}
+                  >
+                    {assisting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    Draft with AI
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Fills the fields below — review and edit before saving.
+                  </span>
+                </div>
+                {assistError && <p className="text-sm text-destructive">{assistError}</p>}
+                {assistNote && (
+                  <p className="text-xs text-muted-foreground">{assistNote}</p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="p-name">Name</Label>
               <Input

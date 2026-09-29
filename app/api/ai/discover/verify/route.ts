@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import {
   getAnthropic,
-  GRANT_OS_MODEL,
+  requestBaseFor,
   WEB_FETCH_TOOL,
   textFromMessage,
   parseJsonFromText,
@@ -161,10 +161,11 @@ export async function POST(req: Request) {
     const messages: Parameters<typeof client.messages.create>[0]['messages'] = [
       { role: 'user', content: buildPrompt(candidate, purpose, org) },
     ]
+    // Model + thinking + effort for THIS task (see lib/anthropic.ts).
+    const base = requestBaseFor('verify')
     const createParams = {
-      model: GRANT_OS_MODEL,
+      ...base,
       max_tokens: 3000,
-      thinking: { type: 'disabled' as const },
       // Two uses: the candidate page, plus one hop if it redirects to the real
       // program page. Bounded so a single candidate can't run long.
       tools: [{ ...WEB_FETCH_TOOL, max_uses: 2 }],
@@ -172,7 +173,7 @@ export async function POST(req: Request) {
     }
 
     let response = await client.messages.create(createParams)
-    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
+    await chargeUsage(orgId, base.model, response.usage)
 
     // Resume across server-tool pauses, carrying the container id (see NOTES.md).
     let guard = 0
@@ -183,7 +184,7 @@ export async function POST(req: Request) {
         ...createParams,
         ...(containerId ? { container: containerId } : {}),
       })
-      await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
+      await chargeUsage(orgId, base.model, response.usage)
     }
     if (response.stop_reason === 'pause_turn') {
       return NextResponse.json({ verified: false, reason: 'verification timed out' })

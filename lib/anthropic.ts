@@ -8,25 +8,134 @@ import Anthropic from '@anthropic-ai/sdk'
  * must never be imported into a client component (the key would leak into the
  * browser bundle).
  *
- * MODEL CHOICE: claude-sonnet-5 (was claude-sonnet-4-6). Sonnet 5 reaches
- * roughly the previous Opus tier on agentic work at a LOWER per-token price
- * ($2/$10 per 1M vs $3/$15) — but it uses the newer tokenizer, which produces
- * ~30% more tokens for the same text, so real spend is roughly a wash rather
- * than a 33% saving. Every route's `max_tokens` was raised ~30% to match.
+ * MODEL CHOICE IS PER TASK — see AI_TASK_MODELS below. Routes must call
+ * `requestBaseFor(task)` and spread the result; they must NEVER hardcode a
+ * `thinking` block, because the legal thinking shape DEPENDS ON THE MODEL:
  *
- * It's a single constant so you can switch to claude-opus-5 (more capable,
- * $5/$25) via ANTHROPIC_MODEL. IMPORTANT: any model you switch to must have a
- * price entry in lib/credits.ts — an unpriced model falls back to the most
- * expensive known rate, which overcharges rather than silently eating margin.
+ *   MEASURED 2026-09-29 against the live API:
+ *     claude-sonnet-5-5  thinking:'disabled' → 400   adaptive → OK
+ *     claude-opus-5-5    thinking:'disabled' → 400   adaptive → OK
+ *     claude-haiku-4-5   thinking:'disabled' → OK    adaptive → 400
+ *     claude-sonnet-5    both accepted
  *
- * Opus 5 caveat: five routes run `thinking: {type:'disabled'}`. On Opus 5 that
- * combination can make the model write a tool call as PLAIN TEXT instead of a
- * real tool_use block — the turn "succeeds" and the search never runs. Move
- * those routes to `{type:'adaptive'}` + a low/medium `output_config.effort`
- * before pinning Opus 5.
+ * So a model swap alone is a breaking change. `requestBaseFor` derives the
+ * thinking block from the model family, which is the whole point of it.
  */
 
-export const GRANT_OS_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5'
+/** Legacy single-model export. Prefer `modelFor(task)`. Kept for compatibility. */
+export const GRANT_OS_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5'
+
+/** Every AI operation in the app, so each can pick its own model. */
+export type AiTask =
+  | 'discover' // phase 1: web search shortlist
+  | 'verify' // phase 2: open a page and confirm one grant
+  | 'generate-form' // requirements text → form fields
+  | 'match-kb' // map KB answers onto form fields
+  | 'funding-summary' // summarize what a funder funds
+  | 'narrative' // the long grant narrative (core deliverable)
+  | 'loi' // letter of intent
+  | 'polish' // rewrite one field
+  | 'purpose-assist' // natural language → a well-formed, searchable Purpose
+
+/**
+ * TASK → MODEL. Chosen from measurements on this app's real prompts
+ * (2026-09-29), not from vibes. Numbers in the comments are single runs, so
+ * treat them as direction, not precision.
+ *
+ * Reasoning-heavy PROSE the customer is judged on → Opus 5.5. It is both
+ * better AND cheaper than Opus 5 ($4/$20 vs $5/$25), so Opus 5 is strictly
+ * dominated and never worth pinning.
+ *
+ * Structured / high-volume work → Sonnet 5.5 ($2/$10). On the discovery search
+ * it beat the old Sonnet 5 + thinking-off baseline on BOTH axes: 6.7s vs 13.5s
+ * and 6 usable candidates vs 4. On verification it was measurably more honest:
+ * for a program whose deadline had passed, Sonnet 5 returned verified:true
+ * while its own prose said "not currently accepting applications"; Sonnet 5.5
+ * returned verified:false with the passed date. False positives are expensive
+ * here — they reach the user as real grants.
+ *
+ * Haiku 4.5 is NOT used: it is the fastest, but on the phase-1 shortlist it
+ * returned unparseable JSON, and every task here needs structured output.
+ *
+ * Override any single task with ANTHROPIC_MODEL_<TASK> (e.g.
+ * ANTHROPIC_MODEL_NARRATIVE), or all of them with ANTHROPIC_MODEL.
+ * WARNING: any model used here MUST have a price row in lib/credits.ts.
+ */
+const AI_TASK_MODELS: Record<AiTask, string> = {
+  discover: 'claude-sonnet-5-5',
+  verify: 'claude-sonnet-5-5',
+  'generate-form': 'claude-sonnet-5-5',
+  'match-kb': 'claude-sonnet-5-5',
+  'funding-summary': 'claude-sonnet-5-5',
+  narrative: 'claude-opus-5-5',
+  loi: 'claude-opus-5-5',
+  polish: 'claude-opus-5-5',
+  // Low volume (once per purpose) but its output shapes EVERY federal query and
+  // AI discovery run afterwards, so it is worth the better model.
+  'purpose-assist': 'claude-opus-5-5',
+}
+
+/**
+ * Effort per task. Effort is the cost/latency dial now that thinking cannot be
+ * switched off on 5.5 models. Measured on the discovery search: medium was
+ * both faster and better than low (6.7s/6 results vs 9.5s/4), so cheap does
+ * not mean low here — pick per task rather than globally.
+ */
+const AI_TASK_EFFORT: Record<AiTask, 'low' | 'medium' | 'high'> = {
+  discover: 'medium',
+  verify: 'medium', // accuracy matters most; a false positive reaches the user
+  'generate-form': 'medium',
+  'match-kb': 'low',
+  'funding-summary': 'low',
+  narrative: 'high', // the core deliverable
+  loi: 'high',
+  polish: 'medium',
+  'purpose-assist': 'medium',
+}
+
+/** Env override name for one task: discover → ANTHROPIC_MODEL_DISCOVER. */
+function envKeyFor(task: AiTask): string {
+  return `ANTHROPIC_MODEL_${task.replace(/-/g, '_').toUpperCase()}`
+}
+
+export function modelFor(task: AiTask): string {
+  return (
+    process.env[envKeyFor(task)] ||
+    process.env.ANTHROPIC_MODEL ||
+    AI_TASK_MODELS[task]
+  )
+}
+
+/**
+ * Models that REJECT `thinking:{type:'adaptive'}` and need the old
+ * enabled/disabled shape. Everything from the 4.6 generation on is adaptive;
+ * Haiku 4.5 and earlier are not.
+ */
+function isAdaptiveThinkingModel(model: string): boolean {
+  return !/haiku|claude-3|sonnet-4-5|sonnet-4-0/.test(model)
+}
+
+/**
+ * The model + thinking + effort for one task, ready to spread into
+ * `messages.create`. ALWAYS use this instead of writing `thinking` by hand —
+ * the correct shape differs per model and getting it wrong is a hard 400.
+ */
+export function requestBaseFor(task: AiTask): {
+  model: string
+  thinking: { type: 'adaptive' } | { type: 'disabled' }
+  output_config?: { effort: 'low' | 'medium' | 'high' }
+} {
+  const model = modelFor(task)
+  if (!isAdaptiveThinkingModel(model)) {
+    // Haiku-class: no adaptive thinking, and `effort` is not supported at all.
+    return { model, thinking: { type: 'disabled' } }
+  }
+  return {
+    model,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: AI_TASK_EFFORT[task] },
+  }
+}
 
 /**
  * WEB SEARCH — deliberately the BASIC variant, not the newer dynamic-filtering

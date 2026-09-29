@@ -171,6 +171,19 @@ export interface PurposeQueryInput {
 export interface DerivedFederalQuery {
   keyword: string
   /**
+   * Progressively BROADER keywords to retry when `keyword` returns zero hits.
+   *
+   * MEASURED 2026-09-29, and it corrected an earlier over-correction of mine.
+   * Quoted phrases are EXACT-phrase matches, so a phrase that is too specific
+   * matches nothing at all: an AI-drafted purpose produced
+   *   '"middle school robotics programs" "afterschool STEM enrichment" ...'
+   * which returned 0 hits, while the naive keyword "youth programs" returned 3.
+   * Precision is worthless if the result set is empty, so the route walks this
+   * ladder until something comes back. Deterministic, free, and independent of
+   * how good the purpose's wording happens to be.
+   */
+  fallbackKeywords: string[]
+  /**
    * A category we think fits — OFFERED, never applied automatically.
    *
    * MEASURED 2026-09-07: auto-applying the category is destructive, because
@@ -272,12 +285,67 @@ export function buildFederalQueryFromPurpose(
     if (score > 0 && (!best || score > best.score)) best = { code, score }
   }
 
-  const derived: DerivedFederalQuery = { keyword, notes }
+  // Build the relaxation ladder, broadest-last. Each rung drops the most
+  // specific (longest) phrases, then finally falls back to the single most
+  // distinctive WORD, which is nearly always non-empty on Grants.gov.
+  const fallbackKeywords: string[] = []
+  if (terms.length > 1) {
+    // Rung 1: the two shortest (most generic, most likely to appear) phrases.
+    const byGenerality = [...terms].sort((a, b) => a.length - b.length)
+    fallbackKeywords.push(byGenerality.slice(0, 2).map(quoteTerm).join(' '))
+    // Rung 2: just the most generic phrase.
+    fallbackKeywords.push(quoteTerm(byGenerality[0]))
+  }
+  // Final rung: the longest single WORD across the terms, unquoted so it also
+  // matches inside longer phrases. Never let a search dead-end at zero.
+  const words = terms
+    .join(' ')
+    .split(/[^A-Za-z0-9]+/)
+    .filter((w) => w.length > 3 && !NAME_STOPWORDS.has(w.toLowerCase()))
+    .sort((a, b) => b.length - a.length)
+  if (words.length > 0) fallbackKeywords.push(words[0])
+
+  const derived: DerivedFederalQuery = {
+    keyword,
+    // Dedupe and never repeat the primary keyword as a fallback.
+    fallbackKeywords: [...new Set(fallbackKeywords)].filter((k) => k && k !== keyword),
+    notes,
+  }
   if (best) {
     // Suggested only — see the note on DerivedFederalQuery.suggestedCategory.
     derived.suggestedCategory = best.code
   }
   return derived
+}
+
+/**
+ * Relevance score for one hit, 0..1-ish. Grants.gov has NO relevance sort —
+ * results come back in date order (verified: sortBy:'relevance' returns zero
+ * results), and it matches full text across the whole synopsis, so a grant that
+ * merely mentions a term ranks alongside one that is actually about it.
+ *
+ * We can't make the API rank, but we CAN re-order the page we were given:
+ * a term appearing in the TITLE is a far stronger signal of fit than the same
+ * term buried in the synopsis, which is all the API matched on.
+ */
+export function relevanceScore(title: string, terms: string[]): number {
+  const t = (title || '').toLowerCase()
+  if (!t || terms.length === 0) return 0
+  let score = 0
+  for (const raw of terms) {
+    const term = raw.trim().toLowerCase()
+    if (!term) continue
+    if (t.includes(term)) {
+      score += 2 // whole phrase in the title — the strongest signal available
+      continue
+    }
+    // Partial credit for the phrase's individual words.
+    const words = term.split(/\s+/).filter((w) => w.length > 3)
+    if (words.length === 0) continue
+    const hit = words.filter((w) => t.includes(w)).length
+    score += hit / words.length
+  }
+  return score / terms.length
 }
 
 export async function fetchGrantsGovOpportunity(

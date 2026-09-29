@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { getAnthropic, GRANT_OS_MODEL, textFromMessage } from '@/lib/anthropic'
+import { getAnthropic, requestBaseFor, textFromMessage } from '@/lib/anthropic'
 import { grants, grantForms } from '@/lib/collections'
 import { completedPct, formToClient } from '@/lib/forms'
 import { hasCredits, chargeUsage } from '@/lib/credits'
@@ -82,13 +82,14 @@ ${field.answer}`
     let polished: string
     try {
       const client = getAnthropic()
+      // Model + thinking + effort for THIS task (see lib/anthropic.ts).
+      const base = requestBaseFor('polish')
       const response = await client.messages.create({
-        model: GRANT_OS_MODEL,
+        ...base,
         max_tokens: 3000,
-        thinking: { type: 'disabled' },
         messages: [{ role: 'user', content: prompt }],
       })
-      await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
+      await chargeUsage(orgId, base.model, response.usage)
       polished = textFromMessage(response).trim()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Polish failed.'

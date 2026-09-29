@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import {
   getAnthropic,
-  GRANT_OS_MODEL,
+  requestBaseFor,
   textFromMessage,
   parseJsonFromText,
 } from '@/lib/anthropic'
@@ -86,13 +86,14 @@ The answer should adapt the knowledge base content to the field's question; keep
   let matches: z.infer<typeof Matches>
   try {
     const client = getAnthropic()
+    // Model + thinking + effort for THIS task (see lib/anthropic.ts).
+    const base = requestBaseFor('match-kb')
     const response = await client.messages.create({
-      model: GRANT_OS_MODEL,
+      ...base,
       max_tokens: 12000,
-      thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: prompt }],
     })
-    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
+    await chargeUsage(orgId, base.model, response.usage)
     matches = Matches.parse(parseJsonFromText(textFromMessage(response)))
   } catch (err) {
     const message = err instanceof Error ? err.message : 'KB matching failed.'

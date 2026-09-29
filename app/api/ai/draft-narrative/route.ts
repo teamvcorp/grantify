@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { getAnthropic, GRANT_OS_MODEL } from '@/lib/anthropic'
+import { getAnthropic, requestBaseFor } from '@/lib/anthropic'
 import { grants, grantForms } from '@/lib/collections'
 import { logActivity } from '@/lib/activity'
 import { hasCredits, chargeUsage } from '@/lib/credits'
@@ -109,11 +109,11 @@ Write the narrative now.`
     async start(controller) {
       let full = ''
       try {
+        // Model + thinking + effort for THIS task (see lib/anthropic.ts).
+        const base = requestBaseFor('narrative')
         const aiStream = client.messages.stream({
-          model: GRANT_OS_MODEL,
+          ...base,
           max_tokens: 12000,
-          // Stream clean prose — no thinking blocks interleaved.
-          thinking: { type: 'disabled' },
           messages: [{ role: 'user', content: prompt }],
         })
         for await (const event of aiStream) {
@@ -124,7 +124,7 @@ Write the narrative now.`
         }
         // Bill usage once the stream completes.
         const finalMsg = await aiStream.finalMessage()
-        await chargeUsage(orgId, GRANT_OS_MODEL, finalMsg.usage)
+        await chargeUsage(orgId, base.model, finalMsg.usage)
         // Signal a clean finish so the client can distinguish complete from cut-off.
         controller.enqueue(encoder.encode(STREAM_DONE))
       } catch (err) {

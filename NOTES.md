@@ -514,6 +514,87 @@ links and one mis-attributed funder (a lego.com page credited to Texas Workforce
 requires the funder's own domain and rejects aggregators/listing sites; the re-run returned 4/4 real
 funder domains (societyforscience.org, twc.texas.gov, greatertexasfoundation.org, tea.texas.gov).
 
+## Per-task models + search quality work (2026-09-29)
+
+### Models are now chosen PER TASK, and `thinking` must never be hardcoded
+
+`lib/anthropic.ts` gained `AiTask`, `modelFor(task)` and **`requestBaseFor(task)`**. Every AI route
+now spreads `...base` instead of setting `model`/`thinking` itself, and bills `chargeUsage(orgId,
+base.model, ...)`.
+
+This is not cosmetic — **the legal `thinking` shape depends on the model**, measured live:
+
+| model | `thinking:'disabled'` | `thinking:'adaptive'` |
+|---|---|---|
+| claude-sonnet-5-5 | **400** | OK |
+| claude-opus-5-5 | **400** | OK |
+| claude-haiku-4-5 | OK | **400** |
+| claude-sonnet-5 | OK | OK |
+
+Six routes hardcoded `disabled`, so a bare model swap would have 400'd everything. `requestBaseFor`
+derives thinking (and `output_config.effort`) from the model family. Override one task with
+`ANTHROPIC_MODEL_<TASK>`, or all with `ANTHROPIC_MODEL`.
+
+**Assignments:** Opus 5.5 for prose the customer is judged on (narrative, LOI, polish,
+purpose-assist); Sonnet 5.5 for structured/high-volume work (discover, verify, generate-form,
+match-kb, funding-summary). Haiku 4.5 is deliberately unused — fastest, but it returned
+**unparseable JSON** on the phase-1 shortlist and every task here needs structured output.
+
+**Measured basis (single runs, treat as direction):**
+- Phase-1 search: Sonnet 5.5 @ medium **6.7s / 6 candidates** vs the old Sonnet 5 + thinking-off
+  baseline **13.5s / 4**. Adaptive thinking is faster AND better here, not slower.
+- Verification honesty: for a program whose deadline had passed, **Sonnet 5 returned
+  `verified:true`** while its own prose said "not currently accepting applications". **Sonnet 5.5
+  returned `verified:false`** citing the passed date. False positives reach the user as real grants,
+  so this is the single strongest reason for 5.5 on `verify`.
+
+### Pricing (verified against the docs 2026-09-29)
+
+`lib/credits.ts` now prices sonnet-5-5 ($2/$10), **opus-5-5 ($4/$20)**, fable-5-1, and the older
+models. **Opus 5.5 is cheaper AND better than Opus 5 ($5/$25), so Opus 5 is strictly dominated** —
+never pin it. `ModelPrice` gained `cacheReadMult` because the cache-read discount is NOT uniform
+(0.05x on Opus 5.5, 0.025x on Fable 5.1, 0.1x elsewhere); the old hardcoded 0.1x would overcharge.
+Web search is **$10/1,000 searches** — the previous estimate was exactly right. Web fetch is free
+beyond tokens, so it is deliberately not charged.
+
+### Purpose AI assist (new) — `POST /api/ai/purpose-assist`
+
+Plain English in, a drafted Purpose out (name/description/focus_areas/geography/target_amount/
+grant_types + a `rationale` line). It **fills the create form and saves nothing** — the user always
+reviews. Offered on create only, never on edit (silently overwriting real values would be hostile).
+
+This is the highest-leverage accuracy lever in the app because `focus_areas` are sent VERBATIM as
+quoted phrases to Grants.gov and as the AI discovery search terms, so the prompt optimizes them as
+SEARCH TERMS, not prose.
+
+### Federal search: relaxation ladder + client-side re-ranking
+
+**The purpose-assist work exposed a flaw in the earlier "be specific" rule.** Quoted phrases are
+EXACT matches, so an over-specific purpose matches nothing: an AI draft produced
+`"middle school robotics programs" "afterschool STEM enrichment" ...` → **0 hits**, worse than the
+naive `"youth programs"` → 3. Precision is worthless on an empty result set.
+
+Fix — `buildFederalQueryFromPurpose` now also returns **`fallbackKeywords`**, a broadest-last ladder
+(all phrases → two most generic → single most generic → longest single WORD unquoted). The route
+walks it until something returns, and reports each broadening in `applied.notes`. Verified: the
+robotics purpose now resolves 0 → 0 → 0 → **1 hit**.
+**Honest limit:** the ladder guarantees non-empty, NOT relevant — that 1 hit is unrelated, because
+Grants.gov genuinely has no federal after-school-robotics program for nonprofits. The UI shows the
+broadening note so the user can see why.
+
+`relevanceScore(title, terms)` re-orders the returned page (title match ≫ synopsis match, which is
+all the API matched on). **Measured effect is modest:** on a 189-hit search it pushed "Research
+Initiatives at the Naval Postgraduate School" (score 0.00) out of the top 6 and pulled up a youth
+reentry program — 1 of 6 changed. It cannot reach the other 164 hits, because `sortBy:'relevance'`
+returns zero and there is no server-side ranking. `applied.ranked` says when it ran.
+`applied.resolved_keyword` pins the post-ladder keyword so paging replays the same search.
+
+### Discovery speed: verification now runs concurrently
+
+Phase-2 verification was a sequential `for` loop (~6 x 5s of dead time). It is now a bounded worker
+pool (CONCURRENCY = 3) that still appends each verified grant as it lands, with functional
+setState for progress/excluded because workers finish out of order.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import {
   getAnthropic,
-  GRANT_OS_MODEL,
+  requestBaseFor,
   textFromMessage,
   parseJsonFromText,
 } from '@/lib/anthropic'
@@ -98,13 +98,14 @@ All string values (question, help_text, options) must be plain text — no Markd
   let genFields: z.infer<typeof GenFields>
   try {
     const client = getAnthropic()
+    // Model + thinking + effort for THIS task (see lib/anthropic.ts).
+    const base = requestBaseFor('generate-form')
     const response = await client.messages.create({
-      model: GRANT_OS_MODEL,
+      ...base,
       max_tokens: 12000,
-      thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: prompt }],
     })
-    await chargeUsage(orgId, GRANT_OS_MODEL, response.usage)
+    await chargeUsage(orgId, base.model, response.usage)
     genFields = GenFields.parse(parseJsonFromText(textFromMessage(response)))
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Form generation failed.'
