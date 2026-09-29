@@ -671,6 +671,17 @@ Live result from a five-program Austin nonprofit mission (Opus 5.5, ~20s for the
 That ordering is the product: it tells the team where federal money actually is, and the zero rows
 are explicitly kept as "still worth creating for AI discovery of foundation/corporate funders".
 
+### Both purpose paths are kept, deliberately
+
+They answer different questions and neither replaces the other:
+- **Portfolio builder** (panel on the Purposes page) — "we run several programs; which should we
+  chase money for?" Mission in, several purposes out, ranked by measured availability.
+- **Single assist** (inside the New purpose dialog, create only) — "I already know the one project
+  I want funded." Plain English in, one purpose out.
+
+The portfolio card links across to the single path, because a user landing on the page sees the big
+panel plus a plain "New purpose" button and has no way to know that button also has AI help.
+
 ### Mission is REQUIRED, and we check before asking
 
 `getOrgMission(orgId)` (lib/org-ai.ts) reads the knowledge base (category `mission`). `GET

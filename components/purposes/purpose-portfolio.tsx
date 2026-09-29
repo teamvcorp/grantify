@@ -168,6 +168,14 @@ export function PurposePortfolio({ onCreated }: { onCreated?: () => void }) {
             and Claude proposes separate funding pipelines — each one checked against open federal
             grants before you see it, and ordered by what funding is actually available.
           </p>
+          {/* The one-off path lives in the New purpose dialog and is easy to
+              miss next to this panel. Point at it rather than letting someone
+              conclude the portfolio builder is the only way to get AI help. */}
+          <p className="pt-1 text-sm text-muted-foreground">
+            Chasing a single specific project instead? Use{' '}
+            <strong className="font-medium">New purpose</strong> — you can describe that one in
+            plain English there.
+          </p>
         </div>
 
         {checking ? (
