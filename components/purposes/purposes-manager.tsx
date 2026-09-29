@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/catalyst/badge'
+import { PurposePortfolio } from './purpose-portfolio'
 import {
   Dialog,
   DialogContent,
@@ -239,6 +240,9 @@ export function PurposesManager() {
           New purpose
         </Button>
       </div>
+
+      <PurposePortfolio onCreated={() => void load()} />
+
 
       {listError && <p className="text-sm text-destructive">{listError}</p>}
 

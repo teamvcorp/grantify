@@ -640,6 +640,55 @@ Verified across three purposes:
 The right behaviour is to say so quickly and route the user to private funders, not to keep
 loosening the query until something — anything — comes back.
 
+## Purpose PORTFOLIO builder — mission in, several purposes out (2026-09-29)
+
+**Corrects the intent of the single-purpose assistant.** Most orgs (including the user's own) run
+several programs at once, so the useful question is not "describe one project" but *"which of the
+things we already do should we chase money for, and where is money actually available?"*
+
+`POST /api/ai/purpose-portfolio` takes the org's mission/slogan plus example programs and proposes
+N distinct Purposes (default 4, max 6) in ONE model call. Existing purpose names are passed in so it
+proposes new pipelines instead of duplicates. Nothing is written — the user picks which to create,
+and `components/purposes/purpose-portfolio.tsx` bulk-creates them via the existing POST /api/purposes.
+
+**Availability is measured, not guessed.** Every proposal is checked against the live federal index
+before display: each focus area individually (`countFederalMatches`) and the whole purpose through
+the same relaxation ladder the real search walks (`countFederalForPurpose`), so `federal_hits` is
+the number the user would actually get. Proposals are ranked by that, and a count that came only
+from a BROADENED query is divided by 10 in the ranking and labelled "broad match" — a weak signal
+must not outrank a real one.
+
+Live result from a five-program Austin nonprofit mission (Opus 5.5, ~20s for the draft):
+
+| federal hits | proposal |
+|---|---|
+| 38 | Reentry Workforce Readiness |
+| 4 | Child & Family Hunger Relief |
+| 0 | Middle School Robotics & Coding Pipeline |
+| 0 | Eviction Prevention & Housing Stability |
+| 0 | Senior Aging-in-Place & Medical Transportation |
+
+That ordering is the product: it tells the team where federal money actually is, and the zero rows
+are explicitly kept as "still worth creating for AI discovery of foundation/corporate funders".
+
+### Mission is REQUIRED, and we check before asking
+
+`getOrgMission(orgId)` (lib/org-ai.ts) reads the knowledge base (category `mission`). `GET
+/api/ai/purpose-portfolio` returns it so the UI never asks a team to retype something they already
+told us. POST requires a mission from EITHER source and 400s with `needs_mission: true` otherwise.
+A freshly typed mission is saved to the KB (best-effort) so it is entered once — and because every
+AI route already reads the KB for org context, that also improves narratives, LOIs and discovery.
+
+### Two bugs this work surfaced
+
+1. **Inconsistent probe filters.** Per-term counts ran unfiltered while the whole-purpose count
+   filtered to 501(c)(3) applicants, so the numbers shown side by side answered different questions
+   ("STEM education" reported 17 unfiltered, 0 filtered). `countFederalMatches` now takes the
+   eligibility and both callers pass `DEFAULT_ELIGIBILITY`.
+2. **`.map(countFederalMatches)` passed the array INDEX as the eligibility argument** — caught by
+   the compiler only because the parameter was added. Both call sites now wrap in an arrow. Worth
+   remembering: never pass a multi-arg function directly to `.map`.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

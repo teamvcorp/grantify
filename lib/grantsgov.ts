@@ -318,6 +318,67 @@ export function buildFederalQueryFromPurpose(
 }
 
 /**
+ * How many currently-posted federal opportunities match ONE phrase, searched
+ * exactly the way the real query will use it (quoted).
+ *
+ * This is the "availability" signal: it answers "is there actually federal
+ * money for this kind of work right now", which is a different question from
+ * "does this phrase read well". Free and keyless, so there is no reason not to
+ * check before showing a user a purpose. Returns -1 if the probe itself failed
+ * (network), which callers must report as unknown rather than as zero.
+ */
+export async function countFederalMatches(
+  term: string,
+  /**
+   * Pass the SAME eligibility the whole-purpose count uses. Without it the
+   * per-term numbers and the overall number answer different questions and
+   * look contradictory side by side — measured: "STEM education" reports 17
+   * unfiltered but 0 once restricted to 501(c)(3) applicants.
+   */
+  eligibility?: string
+): Promise<number> {
+  try {
+    const clean = term.trim().replace(/"/g, '')
+    if (!clean) return 0
+    const res = await searchGrantsGov({
+      keyword: `"${clean}"`,
+      eligibilities: eligibility,
+      rows: 1,
+    })
+    return res.hitCount
+  } catch {
+    return -1
+  }
+}
+
+/**
+ * Total federal opportunities a whole Purpose would surface today, walking the
+ * same relaxation ladder the search route walks so the number matches what the
+ * user will actually see. `broadened` means the specific phrasing found nothing
+ * and we had to fall back — a weak result even when the count is non-zero.
+ */
+export async function countFederalForPurpose(
+  purpose: PurposeQueryInput,
+  eligibility?: string
+): Promise<{ hits: number; keyword: string; broadened: boolean }> {
+  const q = buildFederalQueryFromPurpose(purpose)
+  try {
+    let keyword = q.keyword
+    let data = await searchGrantsGov({ keyword, eligibilities: eligibility, rows: 1 })
+    let broadened = false
+    for (const fallback of q.fallbackKeywords) {
+      if (data.hitCount > 0) break
+      broadened = true
+      keyword = fallback
+      data = await searchGrantsGov({ keyword, eligibilities: eligibility, rows: 1 })
+    }
+    return { hits: data.hitCount, keyword, broadened }
+  } catch {
+    return { hits: -1, keyword: q.keyword, broadened: false }
+  }
+}
+
+/**
  * Relevance score for one hit, 0..1-ish. Grants.gov has NO relevance sort —
  * results come back in date order (verified: sortBy:'relevance' returns zero
  * results), and it matches full text across the whole synopsis, so a grant that

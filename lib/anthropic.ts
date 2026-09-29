@@ -36,6 +36,7 @@ export type AiTask =
   | 'loi' // letter of intent
   | 'polish' // rewrite one field
   | 'purpose-assist' // natural language → a well-formed, searchable Purpose
+  | 'purpose-portfolio' // mission statement → several purposes, ranked by funding availability
 
 /**
  * TASK → MODEL. Chosen from measurements on this app's real prompts
@@ -73,6 +74,9 @@ const AI_TASK_MODELS: Record<AiTask, string> = {
   // Low volume (once per purpose) but its output shapes EVERY federal query and
   // AI discovery run afterwards, so it is worth the better model.
   'purpose-assist': 'claude-opus-5-5',
+  // Proposes the org's whole funding portfolio in one shot — the most
+  // consequential judgement call the app makes, and it runs rarely.
+  'purpose-portfolio': 'claude-opus-5-5',
 }
 
 /**
@@ -91,6 +95,7 @@ const AI_TASK_EFFORT: Record<AiTask, 'low' | 'medium' | 'high'> = {
   loi: 'high',
   polish: 'medium',
   'purpose-assist': 'medium',
+  'purpose-portfolio': 'high',
 }
 
 /** Env override name for one task: discover → ANTHROPIC_MODEL_DISCOVER. */

@@ -22,6 +22,26 @@ export async function getCompanyContext(orgId: ObjectId, limit = 40): Promise<st
   return kb.map((e) => `- ${e.question}: ${e.answer}`).join('\n')
 }
 
+/**
+ * The org's mission statement, if it is already on file.
+ *
+ * Looks in the knowledge base (category 'mission') and falls back to the house
+ * AI instructions. Callers should use this BEFORE asking the user to paste a
+ * mission — if the org already told us, asking again is a needless chore.
+ */
+export async function getOrgMission(orgId: ObjectId): Promise<string> {
+  const kb = await (await knowledgeBase())
+    .find({ org_id: orgId, category: 'mission' })
+    .limit(5)
+    .toArray()
+  const fromKb = kb
+    .map((e) => (e.answer ?? '').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim()
+  return fromKb
+}
+
 /** A prompt block for the house instructions, or '' when none are set. */
 export function instructionsBlock(instructions: string): string {
   return instructions

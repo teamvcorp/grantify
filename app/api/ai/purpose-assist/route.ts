@@ -11,7 +11,7 @@ import {
 import { instructionsBlock } from '@/lib/org-ai'
 import { hasCredits, chargeUsage } from '@/lib/credits'
 import { loadOrgContext } from '@/lib/discovery'
-import { searchGrantsGov } from '@/lib/grantsgov'
+import { countFederalMatches, DEFAULT_ELIGIBILITY } from '@/lib/grantsgov'
 import { FUNDER_TYPES, PurposeInput } from '@/lib/schemas'
 
 /**
@@ -43,27 +43,6 @@ export const maxDuration = 60
 const BodySchema = z.object({
   text: z.string().trim().min(10).max(4000),
 })
-
-/**
- * How many currently-posted federal opportunities a focus area actually
- * matches, as an exact quoted phrase — exactly how the search will use it.
- *
- * WHY: a drafted phrase can read beautifully and match NOTHING. Measured:
- * "middle school robotics programs" → 0 hits, while the naive "youth programs"
- * → 3. Grants.gov is free, keyless and fast, so there is no excuse for handing
- * the user terms we never checked. -1 means the probe itself failed (network),
- * which is reported as unknown rather than as zero.
- */
-async function federalHits(term: string): Promise<number> {
-  try {
-    const clean = term.trim().replace(/"/g, '')
-    if (!clean) return 0
-    const res = await searchGrantsGov({ keyword: `"${clean}"`, rows: 1 })
-    return res.hitCount
-  } catch {
-    return -1
-  }
-}
 
 /**
  * A zero-hit phrase is NOT necessarily bad — it may be perfect for finding
@@ -186,7 +165,7 @@ export async function POST(req: Request) {
     // ever sees them. Probes run in parallel and cost nothing (Grants.gov is
     // public and keyless).
     let terms = [...draft.focus_areas]
-    let hits = await Promise.all(terms.map(federalHits))
+    let hits = await Promise.all(terms.map((t) => countFederalMatches(t, DEFAULT_ELIGIBILITY)))
 
     // If nothing at all matches federally, ask ONCE for broader additions. The
     // specific phrases are kept — they still drive private-funder discovery.
@@ -211,7 +190,7 @@ export async function POST(req: Request) {
           .parse(parseJsonFromText(textFromMessage(broaden)))
         const added = extra.filter((t) => !terms.some((x) => x.toLowerCase() === t.toLowerCase()))
         if (added.length > 0) {
-          const addedHits = await Promise.all(added.map(federalHits))
+          const addedHits = await Promise.all(added.map((t) => countFederalMatches(t, DEFAULT_ELIGIBILITY)))
           terms = [...terms, ...added]
           hits = [...hits, ...addedHits]
         }
