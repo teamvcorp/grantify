@@ -595,6 +595,51 @@ Phase-2 verification was a sequential `for` loop (~6 x 5s of dead time). It is n
 pool (CONCURRENCY = 3) that still appends each verified grant as it lands, with functional
 setState for progress/excluded because workers finish out of order.
 
+## Purpose assist is now VALIDATED, and the ladder no longer manufactures junk (2026-09-29)
+
+Two corrections to the work earlier the same day, both found by testing rather than reasoning.
+
+### 1. Focus areas are checked against the live federal index before the user sees them
+
+`/api/ai/purpose-assist` now probes every drafted focus area against Grants.gov as the exact quoted
+phrase the search will really use (free, keyless, parallel) and returns `focus_area_stats`
+(`{term, federal_hits}`) plus `federal_coverage`. The dialog renders a badge per term — emerald when
+it matches open federal grants, amber at zero. A drafted phrase can read beautifully and match
+nothing, so the user now sees the real number instead of taking the draft on trust.
+
+If EVERY term is zero, the route asks once for broader additions and keeps the specific ones (a
+zero-hit phrase is often still excellent for foundation money, which AI discovery finds on the open
+web). **Measured honestly: that broadening pass did NOT rescue the hard case** — for after-school
+robotics, all 6 terms still returned 0, including "21st Century Community Learning Centers", a real
+federal program name. It is kept because it is cheap and may help elsewhere, but it guarantees
+nothing. The real backstop is below.
+
+### 2. The relaxation ladder's single-word rung was actively harmful — removed
+
+The ladder previously ended with the longest single WORD. Measured result: the robotics purpose
+relaxed to the bare word **"communities" → 181 hits** of urban forestry and disaster-relief grants,
+presented to the user as matches.
+
+**Showing junk is worse than showing nothing.** It wastes the user's time and teaches them not to
+trust results. The ladder now stops at phrase rungs, and the route detects the dead end instead:
+
+`low_confidence` is set when the query had to broaden AND either the result set is empty or nothing
+on the page mentions the purpose's terms in its title. The UI then says plainly that federal funding
+looks unlikely for this project and points at AI discovery, where foundation and corporate funders
+for niche or local programs actually live.
+
+Verified across three purposes:
+
+| purpose | result |
+|---|---|
+| after-school robotics | 0 hits, honest empty + "try AI discovery" (was 181 junk hits) |
+| downtown shelter | 2 real matches, no warning |
+| youth STEM | 189 hits, best title score 0.67, no warning |
+
+**The product lesson worth keeping:** federal is simply the wrong index for niche, local programs.
+The right behaviour is to say so quickly and route the user to private funders, not to keep
+loosening the query until something — anything — comes back.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

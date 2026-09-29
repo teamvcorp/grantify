@@ -192,10 +192,28 @@ export async function POST(req: Request) {
             .map((x) => x.h)
         : data.oppHits
 
+    // LOW-CONFIDENCE DETECTION. If we had to broaden AND nothing on the page
+    // even mentions the purpose's terms in its title, these are almost
+    // certainly not real matches — federal simply has nothing for this project.
+    // Say so plainly instead of dressing up noise as results; the user's time
+    // is better spent on AI discovery of private funders.
+    const broadened = notes.some((n) => n.startsWith('No matches for'))
+    const bestScore = rankTerms.length
+      ? Math.max(0, ...ranked.map((h) => relevanceScore(h.title, rankTerms)))
+      : 1
+    // Covers BOTH shapes of "federal has nothing for this": an empty result
+    // set after broadening, and a non-empty one where nothing matches. Both
+    // mean the same thing to the user, and both should send them to AI
+    // discovery rather than leaving them staring at a dead end.
+    const lowConfidence = broadened && (data.hitCount === 0 || bestScore === 0)
+
     return NextResponse.json({
       hitCount: data.hitCount,
       startRecord: data.startRecord,
       results: ranked.map(normalize),
+      // True when the results came only from broadening and match nothing in
+      // the purpose — the UI warns rather than implying these are good hits.
+      low_confidence: lowConfidence,
       // Echo what actually ran so the UI can show why these results came back.
       applied: {
         keyword,

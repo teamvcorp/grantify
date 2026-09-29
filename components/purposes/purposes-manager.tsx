@@ -61,6 +61,11 @@ export function PurposesManager() {
   const [assisting, setAssisting] = useState(false)
   const [assistError, setAssistError] = useState<string | null>(null)
   const [assistNote, setAssistNote] = useState<string | null>(null)
+  // Live federal hit count per drafted focus area — evidence the terms work.
+  const [assistStats, setAssistStats] = useState<
+    { term: string; federal_hits: number }[] | null
+  >(null)
+  const [federalCoverage, setFederalCoverage] = useState<number | null>(null)
 
   /**
    * Draft a Purpose from plain English. Fills the form rather than saving, so
@@ -71,13 +76,20 @@ export function PurposesManager() {
     setAssistError(null)
     setAssistNote(null)
     try {
+      setAssistStats(null)
+      setFederalCoverage(null)
       const res = await fetch('/api/ai/purpose-assist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: assistText.trim() }),
       })
       const text = await res.text()
-      let data: { error?: string; draft?: Record<string, unknown> } | null = null
+      let data: {
+        error?: string
+        draft?: Record<string, unknown>
+        focus_area_stats?: { term: string; federal_hits: number }[]
+        federal_coverage?: number
+      } | null = null
       try {
         data = text ? JSON.parse(text) : null
       } catch {
@@ -104,6 +116,8 @@ export function PurposesManager() {
         grant_types: d.grant_types,
       })
       setAssistNote(d.rationale || null)
+      setAssistStats(data.focus_area_stats ?? null)
+      setFederalCoverage(data.federal_coverage ?? null)
     } catch (err) {
       setAssistError(err instanceof Error ? err.message : 'Could not draft a purpose.')
     } finally {
@@ -137,6 +151,8 @@ export function PurposesManager() {
     setAssistText('')
     setAssistError(null)
     setAssistNote(null)
+    setAssistStats(null)
+    setFederalCoverage(null)
     setOpen(true)
   }
 
@@ -318,6 +334,35 @@ export function PurposesManager() {
                 {assistError && <p className="text-sm text-destructive">{assistError}</p>}
                 {assistNote && (
                   <p className="text-xs text-muted-foreground">{assistNote}</p>
+                )}
+
+                {/* Checked against the live Grants.gov index, as the exact
+                    quoted phrase the search will use. A drafted phrase can read
+                    well and match nothing, so show the real number. */}
+                {assistStats && assistStats.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">Open federal grants matching each term</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {assistStats.map((st) => (
+                        <Badge
+                          key={st.term}
+                          color={
+                            st.federal_hits < 0 ? 'zinc' : st.federal_hits > 0 ? 'emerald' : 'amber'
+                          }
+                        >
+                          {st.term}
+                          {st.federal_hits < 0 ? ' · ?' : ` · ${st.federal_hits}`}
+                        </Badge>
+                      ))}
+                    </div>
+                    {federalCoverage === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        None of these match an open federal grant today, so federal search will
+                        broaden automatically. They can still be strong for foundation and
+                        corporate funders, which AI discovery searches separately.
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}

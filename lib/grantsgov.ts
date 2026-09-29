@@ -296,14 +296,13 @@ export function buildFederalQueryFromPurpose(
     // Rung 2: just the most generic phrase.
     fallbackKeywords.push(quoteTerm(byGenerality[0]))
   }
-  // Final rung: the longest single WORD across the terms, unquoted so it also
-  // matches inside longer phrases. Never let a search dead-end at zero.
-  const words = terms
-    .join(' ')
-    .split(/[^A-Za-z0-9]+/)
-    .filter((w) => w.length > 3 && !NAME_STOPWORDS.has(w.toLowerCase()))
-    .sort((a, b) => b.length - a.length)
-  if (words.length > 0) fallbackKeywords.push(words[0])
+  // DELIBERATELY NO single-word rung. An earlier version ended the ladder with
+  // the longest single word, which is measurably harmful: an after-school
+  // robotics purpose relaxed all the way to the bare word "communities" and
+  // returned 181 forestry and disaster-relief grants, presented as matches.
+  // Showing junk is worse than showing nothing — it wastes the user's time and
+  // teaches them not to trust the results. The ladder stops at phrases, and the
+  // route flags a low-confidence result set instead of manufacturing one.
 
   const derived: DerivedFederalQuery = {
     keyword,

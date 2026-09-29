@@ -11,6 +11,7 @@ import {
 import { instructionsBlock } from '@/lib/org-ai'
 import { hasCredits, chargeUsage } from '@/lib/credits'
 import { loadOrgContext } from '@/lib/discovery'
+import { searchGrantsGov } from '@/lib/grantsgov'
 import { FUNDER_TYPES, PurposeInput } from '@/lib/schemas'
 
 /**
@@ -42,6 +43,44 @@ export const maxDuration = 60
 const BodySchema = z.object({
   text: z.string().trim().min(10).max(4000),
 })
+
+/**
+ * How many currently-posted federal opportunities a focus area actually
+ * matches, as an exact quoted phrase — exactly how the search will use it.
+ *
+ * WHY: a drafted phrase can read beautifully and match NOTHING. Measured:
+ * "middle school robotics programs" → 0 hits, while the naive "youth programs"
+ * → 3. Grants.gov is free, keyless and fast, so there is no excuse for handing
+ * the user terms we never checked. -1 means the probe itself failed (network),
+ * which is reported as unknown rather than as zero.
+ */
+async function federalHits(term: string): Promise<number> {
+  try {
+    const clean = term.trim().replace(/"/g, '')
+    if (!clean) return 0
+    const res = await searchGrantsGov({ keyword: `"${clean}"`, rows: 1 })
+    return res.hitCount
+  } catch {
+    return -1
+  }
+}
+
+/**
+ * A zero-hit phrase is NOT necessarily bad — it may be perfect for finding
+ * private foundation money (AI discovery searches the open web, where niche
+ * program language works well). It is only a problem when EVERY phrase is
+ * zero, because then the federal half of the product has nothing to search.
+ * So we never delete the model's terms; we measure them and, if federal
+ * coverage is zero, ask once for broader additions that keep the specific ones.
+ */
+const BROADEN_PROMPT = `The focus areas below matched ZERO currently-open federal grants on Grants.gov when searched as exact quoted phrases. They may still be good for finding private foundation funding, so KEEP them.
+
+Add 2 BROADER phrases that federal program titles and eligibility text actually use for this kind of work — the wording that appears in real federal opportunity announcements (for example "out-of-school time" rather than "middle school robotics programs", or "supportive services" rather than "housing navigation").
+
+EXISTING FOCUS AREAS: %TERMS%
+PROJECT: %NAME% — %DESC%
+
+Return ONLY a JSON array of exactly 2 strings, no prose.`
 
 /** Same shape as PurposeInput, but everything is a suggestion to be edited. */
 const Draft = z.object({
@@ -143,12 +182,54 @@ export async function POST(req: Request) {
 
     const draft = Draft.parse(parseJsonFromText(textFromMessage(response)))
 
+    // VALIDATE THE FOCUS AREAS AGAINST THE REAL FEDERAL INDEX before the user
+    // ever sees them. Probes run in parallel and cost nothing (Grants.gov is
+    // public and keyless).
+    let terms = [...draft.focus_areas]
+    let hits = await Promise.all(terms.map(federalHits))
+
+    // If nothing at all matches federally, ask ONCE for broader additions. The
+    // specific phrases are kept — they still drive private-funder discovery.
+    if (hits.every((h) => h === 0)) {
+      try {
+        const broaden = await client.messages.create({
+          ...base,
+          max_tokens: 500,
+          messages: [
+            {
+              role: 'user',
+              content: BROADEN_PROMPT.replace('%TERMS%', terms.join(', '))
+                .replace('%NAME%', draft.name)
+                .replace('%DESC%', draft.description),
+            },
+          ],
+        })
+        await chargeUsage(orgId, base.model, broaden.usage)
+        const extra = z
+          .array(z.string().trim().min(1))
+          .max(2)
+          .parse(parseJsonFromText(textFromMessage(broaden)))
+        const added = extra.filter((t) => !terms.some((x) => x.toLowerCase() === t.toLowerCase()))
+        if (added.length > 0) {
+          const addedHits = await Promise.all(added.map(federalHits))
+          terms = [...terms, ...added]
+          hits = [...hits, ...addedHits]
+        }
+      } catch {
+        // Broadening is best-effort. The search-time relaxation ladder is the
+        // real backstop, so a failure here is not worth failing the request.
+      }
+    }
+
+    const focusAreaStats = terms.map((term, i) => ({ term, federal_hits: hits[i] }))
+    const federalCoverage = hits.filter((h) => h > 0).length
+
     // Re-validate against the REAL create schema so the client can never be
     // handed a draft that /api/purposes would reject.
     const check = PurposeInput.safeParse({
       name: draft.name,
       description: draft.description,
-      focus_areas: draft.focus_areas,
+      focus_areas: terms,
       geography: draft.geography,
       target_amount: draft.target_amount,
       grant_types: draft.grant_types,
@@ -160,7 +241,17 @@ export async function POST(req: Request) {
       )
     }
 
-    return NextResponse.json({ draft: { ...check.data, rationale: draft.rationale } })
+    return NextResponse.json({
+      draft: { ...check.data, rationale: draft.rationale },
+      // Evidence, not decoration: the live federal hit count for each phrase as
+      // the search will actually use it. The UI shows these so the user can see
+      // which terms find federal money and edit the ones that don't.
+      focus_area_stats: focusAreaStats,
+      // 0 here means federal search will have to broaden at query time (the
+      // relaxation ladder). The phrases may still be strong for AI discovery of
+      // private funders, which searches the open web.
+      federal_coverage: federalCoverage,
+    })
   } catch (err) {
     console.error('[ai/purpose-assist] failed:', err)
     const raw = err instanceof Error ? err.message : ''

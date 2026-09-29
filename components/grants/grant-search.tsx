@@ -107,6 +107,9 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
   const [hitCount, setHitCount] = useState(0)
   // What the server actually ran, so the refinement is visible rather than magic.
   const [applied, setApplied] = useState<AppliedQuery | null>(null)
+  // Server says these results only exist because the query was broadened and
+  // none of them actually match the purpose.
+  const [lowConfidence, setLowConfidence] = useState(false)
   // 0-based page and the exact query that produced the current results, so
   // Prev/Next re-run the same search regardless of later edits to the controls.
   const [page, setPage] = useState(0)
@@ -170,6 +173,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       setResults(data.results)
       setHitCount(data.hitCount)
       setApplied(data.applied ?? null)
+      setLowConfidence(Boolean(data.low_confidence))
       setPage(pageArg)
       // The server may have BROADENED the keyword (relaxation ladder). Pin the
       // resolved one so Prev/Next replay this exact search instead of
@@ -182,6 +186,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       setError(err instanceof Error ? err.message : 'Search failed.')
       setResults(null)
       setApplied(null)
+      setLowConfidence(false)
     } finally {
       setLoading(false)
     }
@@ -438,6 +443,16 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
           </div>
         )}
 
+        {lowConfidence && (
+          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            <strong className="font-medium">No strong federal matches.</strong> We broadened the
+            search and still found nothing that fits this purpose, so federal funding for this
+            project looks unlikely. Try <strong className="font-medium">AI discovery</strong> below
+            — foundation and corporate funders are usually the better fit for niche or local
+            programs.
+          </p>
+        )}
+
         {results && results.length > 0 && (
           <p className="text-sm text-muted-foreground">
             {hitCount.toLocaleString()} matches on Grants.gov — showing{' '}
@@ -516,7 +531,9 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
           </div>
         )}
 
-        {results && results.length === 0 && (
+        {/* The low-confidence banner already explains an empty result set and
+            says what to do next, so don't also show a bare "no matches". */}
+        {results && results.length === 0 && !lowConfidence && (
           <p className="text-sm text-muted-foreground">No opportunities matched.</p>
         )}
       </section>
