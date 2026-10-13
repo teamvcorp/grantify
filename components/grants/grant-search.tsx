@@ -108,6 +108,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
   // Per-result import tracking (keys: grantsgov_id for federal, url for AI).
   const [importingKey, setImportingKey] = useState<string | null>(null)
   const [importedKeys, setImportedKeys] = useState<Set<string>>(new Set())
+  const [importError, setImportError] = useState<string | null>(null)
 
   // Federal (Grants.gov) search.
   const [keyword, setKeyword] = useState('')
@@ -147,6 +148,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
 
   async function importGrant(key: string, payload: Record<string, unknown>) {
     if (!purposeId) return
+    setImportError(null)
     setImportingKey(key)
     try {
       const res = await fetch('/api/grants', {
@@ -160,8 +162,10 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       }
       setImportedKeys((s) => new Set(s).add(key))
       onImported?.()
-    } catch {
-      // Surface inline by leaving the button enabled; keep it lightweight.
+    } catch (err) {
+      // Never swallow this. A silent failure is indistinguishable from a dead
+      // button, which is exactly how this surfaced as a bug report.
+      setImportError(err instanceof Error ? err.message : 'Import failed.')
     } finally {
       setImportingKey(null)
     }
@@ -367,13 +371,17 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
 
   function ImportButton({ k, onClick }: { k: string; onClick: () => void }) {
     const done = importedKeys.has(k)
+    // A grant has to be imported INTO a purpose, so with none selected the
+    // button must stay disabled. Say why ON the button: a tooltip alone reads
+    // as a dead control (and never appears at all on touch).
+    const needsPurpose = !purposeId
     return (
       <Button
         variant={done ? 'secondary' : 'outline'}
         size="sm"
-        disabled={!purposeId || importingKey === k || done}
+        disabled={needsPurpose || importingKey === k || done}
         onClick={onClick}
-        title={!purposeId ? 'Select a purpose first' : undefined}
+        title={needsPurpose ? 'Choose a purpose at the top of the page first' : undefined}
       >
         {importingKey === k ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -382,7 +390,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
         ) : (
           <Plus className="h-3.5 w-3.5" />
         )}
-        {done ? 'Imported' : 'Import'}
+        {done ? 'Imported' : needsPurpose ? 'Pick a purpose' : 'Import'}
       </Button>
     )
   }
@@ -496,6 +504,19 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
             programs.
           </p>
         )}
+
+        {/* Tell them BEFORE they reach for a disabled button. A grant is always
+            imported into a purpose, and federal search no longer requires one
+            to run, so results can legitimately appear with nothing to import into. */}
+        {results && results.length > 0 && !purposeId && (
+          <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+            Choose a <strong className="font-medium">purpose</strong> at the top of the page to
+            import any of these. Grants are tracked inside a purpose, so there&apos;s nowhere to
+            put them until you pick one.
+          </p>
+        )}
+
+        {importError && <p className="text-sm text-destructive">{importError}</p>}
 
         {results && results.length > 0 && (
           <p className="text-sm text-muted-foreground">

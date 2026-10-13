@@ -144,7 +144,12 @@ export async function POST(req: Request) {
 
   // Guard the original complaint: with no purpose and no keyword this endpoint
   // used to dump the first 25 of ~1000 unrelated opportunities.
-  if (!keyword && !fundingCategories && !input.eligibilities && !input.agencies) {
+  //
+  // `eligibilities` is deliberately NOT counted as a real query. The UI sends it
+  // on every search (it defaults to 501(c)(3)), so including it here defeated
+  // this guard entirely — a bare Search still returned ~500 topically unrelated
+  // grants. An applicant-type filter narrows WHO can apply, never WHAT it is about.
+  if (!keyword && !fundingCategories && !input.agencies) {
     return NextResponse.json(
       {
         error:

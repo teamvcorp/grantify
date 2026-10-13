@@ -828,6 +828,39 @@ Same purpose that previously returned nothing (after-school robotics, Austin):
 Phase 1 ~14s. The honest caveat: `unconfirmed` means exactly that — the user still has to open the
 page. That is the right trade against showing nothing at all.
 
+## "Import button is dead on federal grants" — two linked bugs (2026-10-12)
+
+**Reported:** the Import button does nothing on federal results.
+
+It was not dead, it was **disabled** — and the reason was invisible. Grants are imported INTO a
+purpose, so with no purpose selected the button is correctly disabled, but the only explanation was
+a `title` tooltip, which reads as a broken control and never appears on touch at all.
+
+**Why you could even get there** — a regression from the purpose-driven search work. The empty-
+search guard was:
+
+```ts
+if (!keyword && !fundingCategories && !input.eligibilities && !input.agencies) // 400
+```
+
+but the UI sends `eligibilities` on EVERY search (it defaults to 501(c)(3)), so the guard never
+fired. A bare Search therefore returned ~500 topically unrelated grants with no purpose set, and
+every Import button on them was disabled. An applicant-type filter narrows WHO may apply, never
+WHAT the grant is about, so it is no longer counted as a real query. The guard now checks keyword /
+category / agency only. (A purpose-driven search still passes: the purpose sets `keyword` at
+line ~130, before the guard at ~152.)
+
+**Fixes**
+1. Guard ignores `eligibilities`, so an unfiltered dump is actually prevented this time.
+2. The button LABELS its own state — "Pick a purpose" instead of a silent disabled "Import".
+3. A banner above the results explains it before the user reaches for the button.
+4. **`importGrant` no longer swallows errors.** It caught every failure and did nothing, so a real
+   import failure was indistinguishable from a dead button — which is how this surfaced as a bug
+   report in the first place. Failures now render.
+
+Note for future debugging: an already-imported federal grant is NOT a failure path — the route
+returns `200 {duplicate:true}` and the client marks it Imported. That was ruled out early.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email
