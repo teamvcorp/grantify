@@ -37,6 +37,7 @@ export type AiTask =
   | 'polish' // rewrite one field
   | 'purpose-assist' // natural language → a well-formed, searchable Purpose
   | 'purpose-portfolio' // mission statement → several purposes, ranked by funding availability
+  | 'grant-refresh' // re-read a tracked grant's own page and pull current details
 
 /**
  * TASK → MODEL. Chosen from measurements on this app's real prompts
@@ -77,6 +78,8 @@ const AI_TASK_MODELS: Record<AiTask, string> = {
   // Proposes the org's whole funding portfolio in one shot — the most
   // consequential judgement call the app makes, and it runs rarely.
   'purpose-portfolio': 'claude-opus-5-5',
+  // Structured extraction from one page — the same job as `verify`.
+  'grant-refresh': 'claude-sonnet-5-5',
 }
 
 /**
@@ -96,6 +99,7 @@ const AI_TASK_EFFORT: Record<AiTask, 'low' | 'medium' | 'high'> = {
   polish: 'medium',
   'purpose-assist': 'medium',
   'purpose-portfolio': 'high',
+  'grant-refresh': 'medium',
 }
 
 /** Env override name for one task: discover → ANTHROPIC_MODEL_DISCOVER. */

@@ -37,12 +37,25 @@ interface AiResult {
   funder_type: 'federal' | 'foundation' | 'state' | 'corporate' | 'other'
   amount_min: number | null
   amount_max: number | null
-  deadline_kind: 'fixed' | 'rolling'
+  deadline_kind: 'fixed' | 'rolling' | 'annual' | 'unknown'
   deadline: string | null
+  next_cycle?: string | null
+  /** Confidence tier — nothing real is dropped any more, it is labelled. */
+  status?: 'open' | 'recurring' | 'unconfirmed'
+  status_note?: string
   url: string
   eligibility: string
   focus_areas: string[]
   summary: string
+}
+
+/** A funder known to run grant programs, to work through by hand. */
+interface FunderLead {
+  funder: string
+  url: string
+  focus: string
+  cycle: string
+  funder_type: 'federal' | 'foundation' | 'state' | 'corporate' | 'other'
 }
 
 /** Exactly what was sent for one federal search, so paging can replay it. */
@@ -122,6 +135,8 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
   const [aiExcluded, setAiExcluded] = useState(0)
   // Verification progress, so a multi-minute run isn't a blank spinner.
   const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null)
+  // Funders worth checking by hand — useful even when nothing is open today.
+  const [funders, setFunders] = useState<FunderLead[] | null>(null)
 
   useEffect(() => {
     fetch('/api/purposes')
@@ -230,6 +245,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
     setAiResults([]) // start empty so verified grants can stream in
     setAiExcluded(0)
     setAiProgress(null)
+    setFunders(null)
 
     // Read as text first: a platform 5xx (e.g. timeout) returns a non-JSON body,
     // which res.json() would choke on with a confusing parse error.
@@ -240,6 +256,27 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
       } catch {
         return null
       }
+    }
+
+    /**
+     * A candidate we could not verify is demoted to the directory rather than
+     * dropped. Dedupes by URL so it can't appear twice.
+     */
+    function demoteToDirectory(c: { name: string; funder: string; url: string }) {
+      setFunders((prev) => {
+        const list = prev ?? []
+        if (list.some((f) => f.url === c.url)) return list
+        return [
+          ...list,
+          {
+            funder: c.funder,
+            url: c.url,
+            focus: c.name,
+            cycle: "couldn't be read automatically — check directly",
+            funder_type: 'other' as const,
+          },
+        ]
+      })
     }
 
     try {
@@ -253,6 +290,7 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
         error?: string
         candidates?: { name: string; funder: string; url: string }[]
         skipped_count?: number
+        funders?: FunderLead[]
       } | null = await readJson(res)
 
       if (!res.ok || !data) {
@@ -262,10 +300,13 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
         )
       }
 
+      // Show the directory immediately — it does not depend on verification.
+      setFunders(data.funders ?? null)
       const candidates = data.candidates ?? []
       // Seed the excluded count with what phase 1 already dropped (duplicates
       // of grants you've imported). Workers increment it from here.
       setAiExcluded(data.skipped_count ?? 0)
+      // A directory with no specific candidates is still a useful result.
       if (candidates.length === 0) return
 
       // PHASE 2 — verify candidates CONCURRENTLY, rendering each as it lands.
@@ -292,11 +333,14 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
               const grant = vdata.grant
               setAiResults((prev) => [...(prev ?? []), grant])
             } else {
-              setAiExcluded((n) => n + 1)
+              // Verification failing is usually the funder's page refusing to
+              // load, not proof the grant isn't real. Demote it to the
+              // check-by-hand list instead of discarding a real funder.
+              demoteToDirectory(candidates[i])
             }
           } catch {
             // One candidate failing must never abort the rest of the run.
-            setAiExcluded((n) => n + 1)
+            demoteToDirectory(candidates[i])
           }
           // Functional update: workers finish out of order, so never compute
           // progress from a captured value.
@@ -601,19 +645,42 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
                       <Badge color={funderColor(r.funder_type)} className="capitalize">
                         {r.funder_type}
                       </Badge>
-                      <Badge color="emerald">Verified</Badge>
+                      {/* Tier, not a blanket "Verified". A recurring program
+                          between cycles is a real opportunity to prepare for,
+                          and saying so is more honest than hiding it. */}
+                      {r.status === 'recurring' ? (
+                        <Badge color="amber">Annual — between cycles</Badge>
+                      ) : r.status === 'unconfirmed' ? (
+                        <Badge color="zinc">Needs checking</Badge>
+                      ) : (
+                        <Badge color="emerald">Open now</Badge>
+                      )}
                       {r.deadline_kind === 'rolling' && <Badge color="sky">Rolling</Badge>}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {r.funder} · {formatAmount(r.amount_min, r.amount_max)} ·{' '}
                       {r.deadline_kind === 'rolling'
                         ? 'Rolling / year-round'
-                        : `Closes ${formatDate(r.deadline)}`}
+                        : r.deadline
+                          ? `Closes ${formatDate(r.deadline)}`
+                          : r.deadline_kind === 'annual'
+                            ? 'Annual program'
+                            : 'Deadline not posted'}
                     </p>
                     <p className="text-sm">{r.summary}</p>
-                    <p className="text-xs text-muted-foreground">
-                      <span className="font-medium">Eligibility:</span> {r.eligibility}
-                    </p>
+                    {/* Why it got its tier, and when to come back. */}
+                    {r.status_note && (
+                      <p className="text-xs text-muted-foreground">{r.status_note}</p>
+                    )}
+                    {r.eligibility ? (
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-medium">Eligibility:</span> {r.eligibility}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Eligibility not stated — check the funder&apos;s page.
+                      </p>
+                    )}
                   </div>
                   <ImportButton
                     k={key}
@@ -643,11 +710,60 @@ export function GrantSearch({ onImported }: { onImported?: () => void }) {
         </div>
 
         {/* `aiResults` is emptied at the START of a run so results can stream in,
-            so this must not fire while verification is still in progress. */}
-        {aiResults && aiResults.length === 0 && !aiLoading && !aiError && (
-          <p className="text-sm text-muted-foreground">
-            No strong matches found. Try refining the purpose&apos;s focus areas or geography.
-          </p>
+            so this must not fire while verification is still in progress.
+            It also must not fire when we found funders to check — that is a
+            useful result, not an empty one. */}
+        {aiResults &&
+          aiResults.length === 0 &&
+          !aiLoading &&
+          !aiError &&
+          (!funders || funders.length === 0) && (
+            <p className="text-sm text-muted-foreground">
+              No strong matches found. Try refining the purpose&apos;s focus areas or geography.
+            </p>
+          )}
+
+        {/* FUNDER DIRECTORY. Specific open opportunities are a high bar that
+            most funder pages genuinely cannot meet, so we also hand back a
+            research list: who to approach, what they fund, and when their
+            cycle opens. Useful months before anything is actually open. */}
+        {funders && funders.length > 0 && (
+          <div className="space-y-3 border-t pt-6">
+            <div>
+              <h3 className="font-medium">Funders worth checking yourself</h3>
+              <p className="text-sm text-muted-foreground">
+                {funders.length} organizations known to run grant programs in this area. These
+                don&apos;t have a confirmed open opportunity right now — open them directly, and
+                revisit when their cycle comes round.
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {funders.map((f, i) => (
+                <div key={`${f.url}-${i}`} className="rounded-lg border p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a
+                      href={f.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium hover:underline"
+                    >
+                      {f.funder}
+                      <ExternalLink className="ml-1 inline h-3 w-3 align-baseline" />
+                    </a>
+                    <Badge color={funderColor(f.funder_type)} className="capitalize">
+                      {f.funder_type}
+                    </Badge>
+                  </div>
+                  {f.focus && <p className="pt-1 text-sm text-muted-foreground">{f.focus}</p>}
+                  {f.cycle && (
+                    <p className="pt-1 text-xs text-muted-foreground">
+                      <span className="font-medium">Cycle:</span> {f.cycle}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </section>
     </div>

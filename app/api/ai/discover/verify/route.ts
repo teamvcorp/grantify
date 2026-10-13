@@ -75,31 +75,44 @@ CANDIDATE TO VERIFY
 - Funder: ${candidate.funder}
 - URL: ${candidate.url}
 
-METHOD (do this for real — do not skip): use web_fetch to OPEN that URL and read the page. Confirm from the page itself: the funder name, that it is currently open, the deadline (a specific date, OR an explicit statement that applications are rolling / accepted year-round), and the eligibility/requirements. If the page will not load, follow at most one obvious link to the program page.
+METHOD (do this for real — do not skip): use web_fetch to OPEN that URL and read the page. Report what the page actually says about the funder, the deadline, the amounts and who may apply. If the page will not load, follow at most one obvious link to the program page.
+
+REPORT, DO NOT GATEKEEP. This is the most important instruction here.
+Your job is to describe the opportunity accurately, NOT to decide whether it is worth showing. A real grant program is useful to the user even when its current round is closed — most foundation grants are ANNUAL, so a page saying "applications closed March 1, reopening in the fall" is a genuine, fundable opportunity to prepare for, not a dead end. Return "verified": true for any real grant program on a real funder's page, and record its true state in "deadline_kind".
+
+Use "verified": false ONLY when the page is not a grant program at all — it does not load, it is an unrelated page, the program has been permanently discontinued, or the opportunity appears to be fabricated.
+
+Never invent a funder, URL, deadline, amount or eligibility. If the page does not state something, use null or "" — an honest blank is far more useful than a guess.
 
 Return ONLY a JSON object (no prose, no markdown fences).
 
-If you CONFIRMED it, return EXACTLY these keys:
+For a real grant program, return EXACTLY these keys:
 {
   "verified": true,
   "name": string,
   "funder": string,
   "funder_type": "federal" | "foundation" | "state" | "corporate" | "other",
-  "amount_min": number | null,        // null only if the funder truly does not publish it
+  "amount_min": number | null,        // null if the funder does not publish it
   "amount_max": number | null,
-  "deadline_kind": "fixed" | "rolling",
-  "deadline": string | null,          // ISO "YYYY-MM-DD" when "fixed"; null when "rolling"
+  "deadline_kind": "fixed" | "rolling" | "annual" | "unknown",
+      // "fixed"   — a specific date is stated (give it even if it has PASSED;
+      //             a passed date tells us this is an annual program)
+      // "rolling" — explicitly accepted year-round
+      // "annual"  — recurs each year but no date is posted right now
+      // "unknown" — the page simply does not say
+  "deadline": string | null,          // ISO "YYYY-MM-DD" when "fixed", else null
+  "next_cycle": string | null,        // e.g. "applications reopen December 2026", if stated
   "url": string,                      // the application/info URL an applicant would use
   "source_url": string,               // the exact page you opened
-  "eligibility": string,              // who may apply + key requirements, FROM THE PAGE
+  "eligibility": string,              // who may apply, FROM THE PAGE ("" if not stated)
   "focus_areas": string[],
   "summary": string                   // 1-2 sentences on fit for this organization
 }
 
-If you could NOT confirm it — page won't load, it's closed, the deadline has passed, eligibility is unclear, or this organization is not eligible — return:
+If this is NOT a real grant program (page won't load, unrelated page, permanently discontinued, or fabricated), return:
 { "verified": false, "reason": string }
 
-Never invent funders, URLs, deadlines, amounts or eligibility. A blank or unknown deadline is NOT acceptable: it must be a real date or an explicitly rolling program.`
+Remember: a closed or undated round is reported, not rejected.`
 }
 
 /** The model answers with one of two shapes; the discriminant is `verified`. */

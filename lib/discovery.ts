@@ -31,21 +31,65 @@ export const Candidate = z.object({
 export type Candidate = z.infer<typeof Candidate>
 
 /** The QUALIFIED shape phase 2 must produce for a candidate to be shown. */
+/**
+ * Confidence tier for a discovered grant. Replaces the old keep-or-drop gate.
+ *
+ * WHY THIS EXISTS: the previous contract demanded a CURRENTLY OPEN program with
+ * a confirmed future deadline and non-empty eligibility, and silently deleted
+ * everything else. Most foundation grants are ANNUAL, so their page almost
+ * always shows a closed cycle ("applications closed Feb 15, reopen in
+ * December") — a real, fundable, recurring program that the old rule threw
+ * away. That is why discovery returned nothing nearly every run.
+ *
+ * Now nothing real is discarded; it is LABELLED, and the user decides.
+ */
+export const DISCOVERY_STATUSES = ['open', 'recurring', 'unconfirmed'] as const
+export type DiscoveryStatus = (typeof DISCOVERY_STATUSES)[number]
+
 export const DiscoveredGrant = z.object({
   name: z.string().trim().min(1),
   funder: z.string().trim().min(1),
   funder_type: z.enum(['federal', 'foundation', 'state', 'corporate', 'other']),
   amount_min: z.number().nullable(),
   amount_max: z.number().nullable(),
-  deadline_kind: z.enum(['fixed', 'rolling']),
-  deadline: z.string().nullable(), // ISO "YYYY-MM-DD" when kind==='fixed'
+  /**
+   * 'annual' = a recurring program whose current cycle is closed.
+   * 'unknown' = the page did not say. Both are KEPT now, labelled.
+   */
+  deadline_kind: z.enum(['fixed', 'rolling', 'annual', 'unknown']).catch('unknown'),
+  deadline: z.string().nullable().catch(null), // ISO "YYYY-MM-DD" when kind==='fixed'
+  /** Free text from the page about when the next cycle opens, if it said. */
+  next_cycle: z.string().trim().nullable().default(null).catch(null),
   url: z.string().url(),
-  source_url: z.string().url(), // the page the model actually opened to verify
-  eligibility: z.string().trim().min(1),
-  focus_areas: z.array(z.string()),
-  summary: z.string(),
+  source_url: z.string().url(), // the page the model actually opened
+  // Loosened from min(1): a missing eligibility statement now downgrades the
+  // tier instead of deleting an otherwise real opportunity.
+  eligibility: z.string().trim().default('').catch(''),
+  focus_areas: z.array(z.string()).default([]).catch([]),
+  summary: z.string().default('').catch(''),
 })
 export type DiscoveredGrant = z.infer<typeof DiscoveredGrant>
+
+/**
+ * A funder we know runs a grant program, without a specific open opportunity.
+ *
+ * Grant programs are often announced on a page with no machine-readable
+ * deadline, or only open for a few weeks a year. A directory of WHO to check
+ * is genuinely useful even when nothing is open today — the user can work the
+ * list manually and revisit annually.
+ */
+export const FunderLead = z.object({
+  funder: z.string().trim().min(1),
+  url: z.string().url(),
+  /** What this funder supports, in their words where possible. */
+  focus: z.string().trim().default(''),
+  /** e.g. "opens each December", "rolling", "unknown". */
+  cycle: z.string().trim().default(''),
+  funder_type: z
+    .enum(['federal', 'foundation', 'state', 'corporate', 'other'])
+    .catch('other'),
+})
+export type FunderLead = z.infer<typeof FunderLead>
 
 /** Normalize a URL for dedup: drop protocol + trailing slashes, lowercase. */
 export function normalizeUrl(u: string): string {
@@ -149,8 +193,14 @@ export async function isLive(url: string): Promise<boolean> {
   }
 }
 
+export type QualifiedGrant = Omit<DiscoveredGrant, 'source_url'> & {
+  status: DiscoveryStatus
+  /** Plain-language note on why it got this tier, shown in the UI. */
+  status_note: string
+}
+
 export type QualifyResult =
-  | { ok: true; grant: Omit<DiscoveredGrant, 'source_url'> }
+  | { ok: true; grant: QualifiedGrant }
   | { ok: false; reason: string }
 
 /**
@@ -165,6 +215,9 @@ export async function qualifyOne(
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
+  // HARD DROPS — only things that are fake, dead, or already yours. Everything
+  // else is kept and labelled. The old gate dropped anything it could not fully
+  // confirm, which deleted most real foundation grants (see DISCOVERY_STATUSES).
   let parsed: URL
   try {
     parsed = new URL(g.url)
@@ -175,27 +228,61 @@ export async function qualifyOne(
     return { ok: false, reason: 'non-http(s) URL' }
   }
 
-  // Deadline rule: fixed → valid, not-past date; rolling → date must be null.
-  let deadline: string | null = null
-  if (g.deadline_kind === 'fixed') {
-    if (!g.deadline) return { ok: false, reason: 'fixed deadline with no date' }
-    const d = new Date(g.deadline)
-    if (Number.isNaN(d.getTime())) return { ok: false, reason: 'invalid deadline' }
-    if (d < today) return { ok: false, reason: 'deadline already passed' }
-    deadline = g.deadline
-  }
-
   const uKey = normalizeUrl(g.url)
   const nKey = nameKey(g.funder, g.name)
   if (existingKeys.has(uKey) || existingKeys.has(nKey)) {
     return { ok: false, reason: 'already in your pipeline' }
   }
 
+  // A link that does not resolve is the one quality bar we keep absolutely:
+  // it is the signal that the model invented the opportunity.
   if (!(await isLive(g.url))) return { ok: false, reason: 'link did not resolve' }
+
+  // TIERING — decide how much to trust it, never whether to show it.
+  let status: DiscoveryStatus
+  let statusNote: string
+  let deadline: string | null = null
+
+  if (g.deadline_kind === 'fixed' && g.deadline) {
+    const d = new Date(g.deadline)
+    if (Number.isNaN(d.getTime())) {
+      status = 'unconfirmed'
+      statusNote = 'The deadline on the page could not be read.'
+    } else if (d >= today) {
+      status = 'open'
+      statusNote = 'Open now, with a confirmed deadline.'
+      deadline = g.deadline
+    } else {
+      // THE BIG ONE. A past deadline almost always means an annual program
+      // between cycles, not a dead opportunity. Previously deleted outright.
+      status = 'recurring'
+      statusNote = g.next_cycle
+        ? `Last cycle closed ${g.deadline}. Next cycle: ${g.next_cycle}.`
+        : `Last cycle closed ${g.deadline} — likely annual, worth checking for the next round.`
+    }
+  } else if (g.deadline_kind === 'rolling') {
+    status = 'open'
+    statusNote = 'Accepts applications year-round.'
+  } else if (g.deadline_kind === 'annual') {
+    status = 'recurring'
+    statusNote = g.next_cycle
+      ? `Annual program. Next cycle: ${g.next_cycle}.`
+      : 'Annual program — check back for the next cycle.'
+  } else {
+    status = 'unconfirmed'
+    statusNote = 'Real funder page, but the deadline was not stated — worth checking directly.'
+  }
+
+  // A missing eligibility statement downgrades confidence; it no longer deletes
+  // the opportunity, because plenty of real funders never publish one.
+  if (!g.eligibility.trim() && status === 'open') {
+    status = 'unconfirmed'
+    statusNote = `${statusNote} Eligibility was not stated on the page.`
+  }
 
   const { source_url: _src, ...rest } = g
   void _src
-  return { ok: true, grant: { ...rest, deadline } }
+  return { ok: true, grant: { ...rest, deadline, status, status_note: statusNote } }
 }
 
 /**

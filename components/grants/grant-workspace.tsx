@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   BookOpen,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react'
 import { BudgetPanel } from '@/components/grants/budget-panel'
 import { ActivityPanel } from '@/components/grants/activity-panel'
@@ -112,6 +113,8 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
     deadline_report: '',
   })
   const [savingDetails, setSavingDetails] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshNote, setRefreshNote] = useState<string | null>(null)
 
   // "What they fund" — funder intent (stored in requirements_raw).
   const [fundingSummary, setFundingSummary] = useState('')
@@ -334,6 +337,68 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
       'Letter of Intent',
       `<div class="narr">${escHtml(loi).replace(/\n/g, '<br/>')}</div>`
     )
+  }
+
+  /**
+   * Ask the AI to re-read this grant's own page and pull current details in.
+   * Reloads afterwards so the refreshed deadline/requirements are visible
+   * immediately rather than needing a manual refresh.
+   */
+  async function refreshFromSource() {
+    setRefreshing(true)
+    setRefreshNote(null)
+    try {
+      const res = await fetch('/api/ai/grant-refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grant_id: grantId }),
+      })
+      const text = await res.text()
+      let d: {
+        error?: string
+        updated?: boolean
+        changed?: string[]
+        next_cycle?: string | null
+        reason?: string
+        summary?: string
+      } | null = null
+      try {
+        d = text ? JSON.parse(text) : null
+      } catch {
+        d = null
+      }
+      if (!res.ok || !d) {
+        throw new Error(d?.error || `Could not refresh (HTTP ${res.status}).`)
+      }
+      if (d.updated) {
+        setRefreshNote(
+          `Updated: ${(d.changed ?? []).join(', ')}.${d.next_cycle ? ` Next cycle: ${d.next_cycle}.` : ''}`
+        )
+        // Re-read the grant so the refreshed deadline and requirements show
+        // immediately. (Loading lives in an inline effect, so pull it here.)
+        const g = await fetch(`/api/grants/${grantId}`)
+        if (g.ok) {
+          const gd: Grant = (await g.json()).grant
+          setGrant(gd)
+          setDetails({
+            url: gd.url ?? '',
+            deadline_loi: gd.deadline_loi?.slice(0, 10) ?? '',
+            deadline_full: gd.deadline_full?.slice(0, 10) ?? '',
+            deadline_report: gd.deadline_report?.slice(0, 10) ?? '',
+          })
+          setFundingSummary(gd.requirements_raw ?? '')
+        }
+      } else {
+        setRefreshNote(
+          d.reason ||
+            `Nothing changed — the page still matches what's on file.${d.next_cycle ? ` Next cycle: ${d.next_cycle}.` : ''}`
+        )
+      }
+    } catch (err) {
+      setRefreshNote(err instanceof Error ? err.message : 'Could not refresh this grant.')
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   function exportPdf() {
@@ -637,6 +702,34 @@ export function GrantWorkspace({ grantId }: { grantId: string }) {
                 </Button>
               )}
             </div>
+          </div>
+
+          {/* Pull the funder's CURRENT details back in. Most foundation grants
+              are annual, so a tracked grant can sit here for months with last
+              year's dates on it; this updates them without retyping. It only
+              touches funder-published facts — never your status, notes or
+              drafts. */}
+          <div className="space-y-1 rounded-md border border-dashed p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={refreshFromSource}
+                disabled={refreshing || !details.url}
+                title={!details.url ? 'Add the grant URL first' : undefined}
+              >
+                {refreshing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Refresh from source
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Re-reads the funder&apos;s page for current deadlines, amounts and requirements.
+              </span>
+            </div>
+            {refreshNote && <p className="text-xs text-muted-foreground">{refreshNote}</p>}
           </div>
 
           <Button onClick={saveDetails} disabled={savingDetails} variant="secondary">

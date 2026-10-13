@@ -769,6 +769,65 @@ Accepted for the simplicity; the limits are low enough that the burst is harmles
 Tested: 20 assertions covering token forgery/replay/timing, disposable domains, and live rate-limit
 increment/peek/reset behaviour — all passing.
 
+## AI discovery was too strict and returned nothing — loosened (2026-10-12)
+
+**Reported:** private-grant AI search "is too limiting and returns nothing every time".
+
+**Cause, and it was one rule.** `qualifyOne` DELETED any grant whose `deadline_kind` was 'fixed'
+with a date in the past. Most foundation grants are ANNUAL, so their page almost always shows a
+closed cycle ("applications closed Feb 15, reopen in December") — a real, fundable, recurring
+opportunity that we threw away. The verify prompt compounded it by demanding a CURRENTLY OPEN
+program with confirmed eligibility, so Sonnet 5.5 (correctly strict) returned `verified:false` for
+anything it couldn't fully confirm, and that was dropped too.
+
+### Nothing real is discarded any more — it is TIERED
+
+`DISCOVERY_STATUSES = ['open','recurring','unconfirmed']`. `deadline_kind` gained `'annual'` and
+`'unknown'`, plus a `next_cycle` free-text field. `qualifyOne` now hard-drops ONLY what is fake,
+dead or already yours (unparseable/non-http URL, dead link, duplicate) and labels everything else:
+
+| situation | before | now |
+|---|---|---|
+| fixed deadline in the past | **deleted** | `recurring` — "Last cycle closed X — likely annual" |
+| no deadline stated | **deleted** | `unconfirmed` — "worth checking directly" |
+| no eligibility stated | **deleted** | kept, tier downgraded to `unconfirmed` |
+| dead link / duplicate | dropped | dropped (unchanged — this is the anti-fabrication bar) |
+
+The verify prompt now says **REPORT, DO NOT GATEKEEP**: `verified:false` is only for "not a grant
+program at all". `eligibility` is no longer `min(1)`, and the schema uses `.catch()` so one odd
+field can't void a whole result.
+
+### New: a funder directory (who to check by hand)
+
+Phase 1 returns `{candidates, funders}` instead of a bare array. `funders` is a research list — up
+to 12 organizations KNOWN to run grant programs, with focus and cycle, no deadline required. It
+stays useful when nothing is open today, which is the normal state of foundation funding.
+
+A candidate whose verification FAILS is demoted into this directory rather than discarded — a
+`web_fetch` that can't load a page is usually the funder's site refusing a bot, not proof the grant
+is fake. (Measured: 2 of 5 candidates failed that way in testing.)
+
+### New: `POST /api/ai/grant-refresh` — pull from the grant's spec sheet
+
+Re-reads a tracked grant's own page and pulls current details back in (deadline, amounts,
+eligibility, requirements). This is what makes a `recurring` grant actionable: it sits in the
+pipeline with last year's dates until the new cycle opens, then one button updates it. Refreshes
+only funder-published facts — never status, phase, notes, narrative or form answers. Re-checks the
+stored URL with `isFetchableUrl` first, because a stored URL is still user-supplied (SSRF).
+"Refresh from source" button lives in the workspace's Submission & deadlines card.
+
+### Measured result
+
+Same purpose that previously returned nothing (after-school robotics, Austin):
+
+| | before | after |
+|---|---|---|
+| grants shown | 0 | **3** (1 open, 2 unconfirmed) |
+| funders to check | 0 | **10** |
+
+Phase 1 ~14s. The honest caveat: `unconfirmed` means exactly that — the user still has to open the
+page. That is the right trade against showing nothing at all.
+
 ## Status — what's next (still deferred)
 
 1. Token-based self-serve password reset / invite-accept (current reset is admin-set; welcome email

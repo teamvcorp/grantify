@@ -14,6 +14,7 @@ import { instructionsBlock } from '@/lib/org-ai'
 import { hasCredits, chargeUsage } from '@/lib/credits'
 import {
   Candidate,
+  FunderLead,
   MAX_CANDIDATES,
   loadExistingKeys,
   loadOrgContext,
@@ -47,6 +48,20 @@ export const maxDuration = 300
 const BodySchema = z.object({ purpose_id: z.string().min(1) })
 
 const Candidates = z.array(Candidate)
+
+/**
+ * Phase 1 now returns TWO things, because a specific open opportunity is a
+ * high bar that most funder pages genuinely cannot meet:
+ *  - candidates: specific programs worth verifying.
+ *  - funders:    organizations KNOWN to run grant programs, to work through by
+ *                hand and revisit annually. No deadline required, so this list
+ *                stays useful even when nothing is open today.
+ * `.catch` on each half means a malformed one does not lose the other.
+ */
+const SearchResult = z.object({
+  candidates: Candidates.default([]).catch([]),
+  funders: z.array(FunderLead).default([]).catch([]),
+})
 
 function buildPrompt(
   p: {
@@ -88,13 +103,29 @@ URL RULES (important):
 
 This is a SHORTLISTING pass only — another step will open each page and verify the details, so do NOT try to confirm deadlines or eligibility now. Be fast.
 
-Return ONLY a JSON array (no prose, no markdown fences) of up to ${MAX_CANDIDATES} objects with EXACTLY these keys:
-[{
-  "name": string,    // the grant/program name
-  "funder": string,  // the organization giving the money
-  "url": string      // the program or application page you found
-}]
-If you found nothing credible, return an empty array [].`
+BE GENEROUS, NOT STRICT. A later step opens each page and records exactly what it says, and the user decides what to pursue — so your job is COVERAGE, not filtering. Include a program even if you are unsure it is open right now: most foundation grants are annual, and knowing a funder exists is useful months before their next round. Returning nothing is the worst possible answer.
+
+Return ONLY a JSON object (no prose, no markdown fences) with EXACTLY these two keys:
+{
+  "candidates": [   // up to ${MAX_CANDIDATES} SPECIFIC programs worth checking in detail
+    {
+      "name": string,    // the grant/program name
+      "funder": string,  // the organization giving the money
+      "url": string      // the program or application page you found
+    }
+  ],
+  "funders": [      // up to 12 organizations KNOWN to run grant programs for this kind of work
+    {
+      "funder": string,       // company, foundation or agency name
+      "url": string,          // their grants/giving page on their OWN site
+      "focus": string,        // what they fund, in their words where possible
+      "cycle": string,        // e.g. "opens each December", "rolling", "unknown"
+      "funder_type": "federal" | "foundation" | "state" | "corporate" | "other"
+    }
+  ]
+}
+
+The "funders" list is a research list the user will work through by hand, so cast a WIDER net there: well-known corporate giving programs, community foundations serving this geography, and family foundations active in this field all belong in it, even with no open opportunity and no posted deadline. Never invent a funder or a URL — every entry must be an organization you actually saw.`
 }
 
 export async function POST(req: Request) {
@@ -176,7 +207,12 @@ export async function POST(req: Request) {
     }
 
     const raw = parseJsonFromText<unknown>(textFromMessage(response))
-    const validated = Candidates.parse(raw)
+    // Tolerate the model returning a bare array (the old shape) as well as the
+    // documented object, so a formatting slip never costs the whole run.
+    const parsedResult = Array.isArray(raw)
+      ? { candidates: Candidates.catch([]).parse(raw), funders: [] }
+      : SearchResult.parse(raw)
+    const validated = parsedResult.candidates
 
     // Drop anything already in the pipeline, and dedupe within the batch, BEFORE
     // spending a verification request on it.
@@ -198,6 +234,8 @@ export async function POST(req: Request) {
       candidates,
       // Leads only — the client verifies each one via /api/ai/discover/verify.
       skipped_count: validated.length - candidates.length,
+      // Funders to check by hand — useful even when nothing is open today.
+      funders: parsedResult.funders,
     })
   } catch (err) {
     console.error('[ai/discover] failed:', err)
